@@ -45,6 +45,15 @@ class ChatPlanModel(BaseModel):
     retrievalReason: str
 
 
+class TraceStageModel(BaseModel):
+    stage: str
+    status: Literal["pending", "running", "succeeded", "failed", "cancelled"]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    startedAt: str | None = None
+    finishedAt: str | None = None
+    durationMs: int | None = None
+
+
 class RetrievalChunkModel(BaseModel):
     chunkId: str
     knowledgeBaseId: str
@@ -65,6 +74,7 @@ class RetrievalResponseModel(BaseModel):
     chunks: list[RetrievalChunkModel]
     timing: RetrievalTimingModel
     source: str
+    traceStages: list[TraceStageModel] = Field(default_factory=list)
 
 
 class ChatTurnResponseModel(BaseModel):
@@ -73,6 +83,7 @@ class ChatTurnResponseModel(BaseModel):
     userMessage: MessageModel
     assistantMessage: MessageModel
     plan: ChatPlanModel
+    traceStages: list[TraceStageModel] = Field(default_factory=list)
 
 
 class ChatStartedEvent(BaseModel):
@@ -104,6 +115,7 @@ class ChatCompletedEvent(BaseModel):
     type: Literal["chat.completed"] = "chat.completed"
     traceId: str
     plan: ChatPlanModel
+    traceStages: list[TraceStageModel] = Field(default_factory=list)
 
 
 class ThinkingDeltaEvent(BaseModel):

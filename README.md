@@ -102,6 +102,12 @@ To verify `/api/chat/stream` preserves retrieval metadata and tool-call metadata
 python scripts/verify_chat_stream_metadata_e2e.py
 ```
 
+To verify both `/api/chat` and `/api/chat/stream` write retrieval/tool/generation stages into `/api/trace` through the BFF:
+
+```bash
+python scripts/verify_chat_trace_e2e.py
+```
+
 Optional environment overrides:
 
 - `RAGENT_WEB_BASE_URL`

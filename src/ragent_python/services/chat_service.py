@@ -18,6 +18,7 @@ from ragent_python.contracts.public_api import (
     MessageModel,
     ThinkingCompletedEvent,
     ThinkingDeltaEvent,
+    TraceStageModel,
     ToolCallEvent,
     ToolCallModel,
     utc_now_iso,
@@ -35,6 +36,7 @@ class ChatArtifacts:
     assistant_message: MessageModel
     plan: ChatPlanModel
     tool_calls: list[ToolCallModel]
+    trace_stages: list[TraceStageModel]
 
 
 def _build_assistant_text(request: InternalChatRequestModel) -> str:
@@ -56,6 +58,37 @@ def _plan_tool_call(request: InternalChatRequestModel, trace_id: str) -> MCPPlan
             args={"key": "chat.defaultModel"},
         )
     return None
+
+
+def _normalize_trace_stages(raw_trace_stages: list[dict[str, object]] | None) -> list[TraceStageModel]:
+    normalized: list[TraceStageModel] = []
+    if not raw_trace_stages:
+        return normalized
+
+    for raw_stage in raw_trace_stages:
+        stage = raw_stage.get("stage")
+        status = raw_stage.get("status")
+        if not isinstance(stage, str) or not isinstance(status, str):
+            continue
+        if status not in {"pending", "running", "succeeded", "failed", "cancelled"}:
+            continue
+
+        metadata = raw_stage.get("metadata")
+        normalized.append(
+            TraceStageModel(
+                stage=stage,
+                status=status,
+                metadata=metadata if isinstance(metadata, dict) else {},
+                startedAt=raw_stage.get("startedAt") if isinstance(raw_stage.get("startedAt"), str) else None,
+                finishedAt=raw_stage.get("finishedAt") if isinstance(raw_stage.get("finishedAt"), str) else None,
+                durationMs=(
+                    max(0, round(raw_stage["durationMs"]))
+                    if isinstance(raw_stage.get("durationMs"), (int, float))
+                    else None
+                ),
+            )
+        )
+    return normalized
 
 
 def create_chat_artifacts(request: InternalChatRequestModel) -> ChatArtifacts:
@@ -154,6 +187,38 @@ def create_chat_artifacts(request: InternalChatRequestModel) -> ChatArtifacts:
             summary = last_tool.output.get("summary")
             if isinstance(summary, str) and summary:
                 assistant_text = f"{assistant_text} Tool summary: {summary}"
+    trace_stages = list(retrieval_response.traceStages)
+    if planned_tool_call is not None:
+        trace_stages.append(
+            TraceStageModel(
+                stage="tool.plan",
+                status="succeeded",
+                metadata={
+                    "toolCallId": planned_tool_call.toolCallId,
+                    "toolName": planned_tool_call.toolName,
+                    "args": planned_tool_call.args,
+                },
+                startedAt=timestamp,
+                finishedAt=timestamp,
+                durationMs=0,
+            )
+        )
+    trace_stages.extend(_normalize_trace_stages(tool_runtime.traceStages if tool_runtime is not None else None))
+    trace_stages.append(
+        TraceStageModel(
+            stage="generation.completed",
+            status="succeeded",
+            metadata={
+                "provider": "python-backend",
+                "mode": "phase1-local-retrieval",
+                "model": "internal-phase1",
+                "outputChars": len(assistant_text),
+            },
+            startedAt=timestamp,
+            finishedAt=timestamp,
+            durationMs=0,
+        )
+    )
     assistant_message = MessageModel(
         messageId=assistant_message_id,
         conversationId=conversation_id,
@@ -187,6 +252,7 @@ def create_chat_artifacts(request: InternalChatRequestModel) -> ChatArtifacts:
         assistant_message=assistant_message,
         plan=plan,
         tool_calls=tool_calls,
+        trace_stages=trace_stages,
     )
 
 
@@ -198,6 +264,7 @@ def build_chat_turn_response(request: InternalChatRequestModel) -> ChatTurnRespo
         userMessage=artifacts.user_message,
         assistantMessage=artifacts.assistant_message,
         plan=artifacts.plan,
+        traceStages=artifacts.trace_stages,
     )
 
 
@@ -251,6 +318,7 @@ def iter_chat_stream_events(request: InternalChatRequestModel) -> Iterator[str]:
         ChatCompletedEvent(
             traceId=artifacts.trace_id,
             plan=artifacts.plan,
+            traceStages=artifacts.trace_stages,
         )
     )
 

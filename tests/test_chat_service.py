@@ -155,6 +155,67 @@ class ChatServiceTests(unittest.TestCase):
         self.assertEqual(metadata["toolCalls"][-1]["toolName"], "get_system_setting")
         self.assertEqual(metadata["toolCalls"][-1]["status"], "succeeded")
 
+    def test_chat_turn_response_includes_trace_stages(self) -> None:
+        source_text = "Atlas launch memo says rollback approval requires two green canary windows before production unlock."
+        encoded = b64encode(source_text.encode("utf-8")).decode("ascii")
+        task = create_ingestion_task(
+            IngestionTaskCreateRequestModel(
+                traceId="trace_turn_stages",
+                knowledgeBaseId="kb_turn_stages",
+                documentId="doc_turn_stages",
+                requestedBy="admin_chat",
+                tenantId="tenant_test",
+                orgId="org_test",
+                source=IngestionSourceModel(
+                    sourceType="upload",
+                    uri=f"data:text/plain;base64,{encoded}",
+                    filename="atlas-launch.txt",
+                    mimeType="text/plain",
+                    sizeBytes=len(source_text),
+                ),
+                executionPlan=IngestionExecutionPlanModel(),
+            )
+        )
+        run_ingestion_worker(limit=1, task_ids=[task.taskId])
+
+        response = build_chat_turn_response(
+            InternalChatRequestModel(
+                message="Please check setting chat.defaultModel and explain what the atlas launch memo requires before production unlock.",
+                conversationId="conv_turn_stages",
+                userId="user_test",
+                tenantId="tenant_test",
+                orgId="org_test",
+                role="admin",
+            )
+        )
+
+        stages = [stage.stage for stage in response.traceStages]
+        self.assertIn("retrieval.plan", stages)
+        self.assertIn("retrieval.execute", stages)
+        self.assertIn("tool.plan", stages)
+        self.assertIn("tool.runtime.started", stages)
+        self.assertIn("tool.runtime.completed", stages)
+        self.assertIn("generation.completed", stages)
+
+    def test_stream_chat_completed_includes_trace_stages(self) -> None:
+        request = InternalChatRequestModel(
+            message="Please check setting chat.defaultModel.",
+            conversationId="conv_trace_stream",
+            userId="user_test",
+            tenantId="tenant_test",
+            orgId="org_test",
+            role="admin",
+        )
+
+        events = [json.loads(line) for line in iter_chat_stream_events(request)]
+        completed = next(event for event in events if event["type"] == "chat.completed")
+        stages = [stage["stage"] for stage in completed["traceStages"]]
+
+        self.assertIn("retrieval.plan", stages)
+        self.assertIn("retrieval.execute", stages)
+        self.assertIn("tool.plan", stages)
+        self.assertIn("generation.completed", stages)
+
 
 if __name__ == "__main__":
     unittest.main()
