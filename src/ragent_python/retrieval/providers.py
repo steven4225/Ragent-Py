@@ -249,11 +249,12 @@ def _build_qdrant_provider():
 @lru_cache(maxsize=1)
 def _build_reranker():
     settings = get_settings()
-    backend = settings.reranker_backend.strip().lower()
+    backend = settings.reranker_backend.strip().lower() or "auto"
+    bge_url = settings.bge_reranker_url.strip() or settings.legacy_bge_reranker_url.strip()
     if backend == "none":
         return NoopReranker()
-    if backend == "bge" and settings.bge_reranker_url.strip():
-        return BGEReranker(endpoint=settings.bge_reranker_url, timeout_ms=settings.reranker_timeout_ms)
+    if backend in {"bge", "auto"} and bge_url:
+        return BGEReranker(endpoint=bge_url, timeout_ms=settings.reranker_timeout_ms)
     return HeuristicReranker()
 
 

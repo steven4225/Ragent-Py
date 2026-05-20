@@ -497,6 +497,126 @@ class QdrantProviderTests(unittest.TestCase):
                     self.assertEqual(response.chunks[0].title, "Atlas Launch Memo")
                     self.assertEqual(response.chunks[0].metadata["rerankSource"], "bge-reranker-v2-m3")
 
+    def test_hybrid_retrieval_uses_legacy_bge_url_by_default(self) -> None:
+        with fake_qdrant_server() as (qdrant_server, _state):
+            with fake_reranker_server({"scores": [0.91, 0.17], "indices": [1, 0]}) as reranker_server:
+                with patched_env(
+                    {
+                        "PYTHON_RETRIEVAL_BACKEND": "hybrid",
+                        "PYTHON_QDRANT_URL": f"http://127.0.0.1:{qdrant_server.server_port}",
+                        "PYTHON_QDRANT_COLLECTION": "legacy_bge_chunks",
+                        "BGE_RERANKER_URL": f"http://127.0.0.1:{reranker_server.server_port}/rerank",
+                    }
+                ):
+                    clear_retrieval_provider_cache()
+                    provider = QdrantIndexProvider(
+                        base_url=f"http://127.0.0.1:{qdrant_server.server_port}",
+                        collection="legacy_bge_chunks",
+                    )
+                    provider.upsert_records(
+                        [
+                            QdrantIndexRecord(
+                                chunk_id="chunk_legacy_a",
+                                knowledge_base_id="kb_legacy",
+                                document_id="doc_legacy_a",
+                                title="Alpha Memo",
+                                content="Alpha memo mentions approval and unlock.",
+                                tenant_id="tenant_legacy",
+                                org_id="org_legacy",
+                                metadata={"filename": "alpha.txt"},
+                            ),
+                            QdrantIndexRecord(
+                                chunk_id="chunk_legacy_b",
+                                knowledge_base_id="kb_legacy",
+                                document_id="doc_legacy_b",
+                                title="Atlas Launch Memo",
+                                content="Atlas launch memo requires two canary windows before unlock.",
+                                tenant_id="tenant_legacy",
+                                org_id="org_legacy",
+                                metadata={"filename": "atlas.txt"},
+                            ),
+                        ],
+                        index_name="legacy_bge_chunks",
+                    )
+
+                    response = execute_retrieval(
+                        InternalRetrievalRequestModel(
+                            traceId="trace_legacy_bge_search",
+                            query="approval before unlock",
+                            tenantId="tenant_legacy",
+                            orgId="org_legacy",
+                            knowledgeBaseIds=["kb_legacy"],
+                        )
+                    )
+
+                    self.assertGreater(len(response.chunks), 1)
+                    self.assertEqual(response.chunks[0].title, "Atlas Launch Memo")
+                    self.assertEqual(response.chunks[0].metadata["rerankSource"], "bge-reranker-v2-m3")
+
+    def test_hybrid_retrieval_accepts_v1_rerank_response_shape(self) -> None:
+        with fake_qdrant_server() as (qdrant_server, _state):
+            with fake_reranker_server(
+                {
+                    "results": [
+                        {"index": 1, "relevance_score": 0.94, "document": {"text": "Atlas launch memo requires two canary windows before unlock."}},
+                        {"index": 0, "relevance_score": 0.21, "document": {"text": "Alpha memo mentions approval and unlock."}},
+                    ]
+                }
+            ) as reranker_server:
+                with patched_env(
+                    {
+                        "PYTHON_RETRIEVAL_BACKEND": "hybrid",
+                        "PYTHON_QDRANT_URL": f"http://127.0.0.1:{qdrant_server.server_port}",
+                        "PYTHON_QDRANT_COLLECTION": "v1_rerank_chunks",
+                        "PYTHON_RERANKER_BACKEND": "bge",
+                        "PYTHON_BGE_RERANKER_URL": f"http://127.0.0.1:{reranker_server.server_port}/v1/rerank",
+                    }
+                ):
+                    clear_retrieval_provider_cache()
+                    provider = QdrantIndexProvider(
+                        base_url=f"http://127.0.0.1:{qdrant_server.server_port}",
+                        collection="v1_rerank_chunks",
+                    )
+                    provider.upsert_records(
+                        [
+                            QdrantIndexRecord(
+                                chunk_id="chunk_v1_a",
+                                knowledge_base_id="kb_v1",
+                                document_id="doc_v1_a",
+                                title="Alpha Memo",
+                                content="Alpha memo mentions approval and unlock.",
+                                tenant_id="tenant_v1",
+                                org_id="org_v1",
+                                metadata={"filename": "alpha.txt"},
+                            ),
+                            QdrantIndexRecord(
+                                chunk_id="chunk_v1_b",
+                                knowledge_base_id="kb_v1",
+                                document_id="doc_v1_b",
+                                title="Atlas Launch Memo",
+                                content="Atlas launch memo requires two canary windows before unlock.",
+                                tenant_id="tenant_v1",
+                                org_id="org_v1",
+                                metadata={"filename": "atlas.txt"},
+                            ),
+                        ],
+                        index_name="v1_rerank_chunks",
+                    )
+
+                    response = execute_retrieval(
+                        InternalRetrievalRequestModel(
+                            traceId="trace_v1_rerank_search",
+                            query="approval before unlock",
+                            tenantId="tenant_v1",
+                            orgId="org_v1",
+                            knowledgeBaseIds=["kb_v1"],
+                        )
+                    )
+
+                    self.assertGreater(len(response.chunks), 1)
+                    self.assertEqual(response.chunks[0].title, "Atlas Launch Memo")
+                    self.assertEqual(response.chunks[0].metadata["rerankSource"], "bge-reranker-v2-m3")
+
 
 if __name__ == "__main__":
     unittest.main()

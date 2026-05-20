@@ -72,6 +72,10 @@ class BGEReranker:
 
         scores = payload.get("scores", [])
         indices = payload.get("indices", [])
+        if isinstance(payload.get("results"), list):
+            reranked = self._rerank_from_v1_results(payload["results"], chunks)
+            return reranked[:top_k] if top_k > 0 else reranked
+
         reranked: list[RetrievalChunkModel] = []
         for position, raw_index in enumerate(indices):
             if not isinstance(raw_index, int) or raw_index < 0 or raw_index >= len(chunks):
@@ -91,3 +95,32 @@ class BGEReranker:
                 )
             )
         return reranked[:top_k] if top_k > 0 else reranked
+
+    def _rerank_from_v1_results(
+        self,
+        results: list[object],
+        chunks: list[RetrievalChunkModel],
+    ) -> list[RetrievalChunkModel]:
+        reranked: list[RetrievalChunkModel] = []
+        for position, item in enumerate(results):
+            if not isinstance(item, dict):
+                continue
+            raw_index = item.get("index")
+            if not isinstance(raw_index, int) or raw_index < 0 or raw_index >= len(chunks):
+                continue
+            raw_score = item.get("relevance_score")
+            rerank_score = float(raw_score) if isinstance(raw_score, (int, float)) else float(len(chunks) - position)
+            chunk = chunks[raw_index]
+            reranked.append(
+                chunk.model_copy(
+                    update={
+                        "score": rerank_score,
+                        "metadata": {
+                            **chunk.metadata,
+                            "rerankSource": self.provider_name,
+                            "rerankScore": rerank_score,
+                        },
+                    }
+                )
+            )
+        return reranked

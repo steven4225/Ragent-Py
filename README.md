@@ -82,7 +82,8 @@ Hybrid retrieval behavior:
 - dense results come from Qdrant when `PYTHON_RETRIEVAL_BACKEND` is `hybrid` or `qdrant`
 - keyword results come from the local BM25 provider over the same local + ingested corpus
 - dense and keyword candidates are fused with reciprocal-rank fusion
-- reranking defaults to a local heuristic model and can be switched to an HTTP BGE-style reranker with `PYTHON_RERANKER_BACKEND=bge`
+- reranking defaults to `auto`: if `PYTHON_BGE_RERANKER_URL` or legacy `BGE_RERANKER_URL` is set, Python uses the external BGE reranker; otherwise it falls back to the local heuristic model
+- set `PYTHON_RERANKER_BACKEND=heuristic` to force local reranking, or `PYTHON_RERANKER_BACKEND=none` to disable reranking entirely
 - fallback retrieval still preserves the ingestion/local providers when no hybrid candidates are found
 
 When `executionPlan.indexing.storeType=qdrant`, the ingestion worker writes chunk payloads into Qdrant during the indexing stage.

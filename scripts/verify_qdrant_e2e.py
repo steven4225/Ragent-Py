@@ -13,8 +13,6 @@ from dataclasses import dataclass
 DEFAULT_WEB_BASE_URL = "http://127.0.0.1:3000"
 DEFAULT_QDRANT_URL = "http://127.0.0.1:6333"
 DEFAULT_QDRANT_COLLECTION = "ragent_python_chunks"
-
-
 @dataclass(frozen=True, slots=True)
 class VerificationConfig:
     web_base_url: str
@@ -25,6 +23,7 @@ class VerificationConfig:
     user_id: str
     user_name: str
     role: str
+    expected_rerank_source: str | None
 
 
 def main() -> int:
@@ -38,6 +37,7 @@ def main() -> int:
         user_id=os.environ.get("RAGENT_USER_ID", "admin_demo"),
         user_name=os.environ.get("RAGENT_USER_NAME", "Demo Admin"),
         role=os.environ.get("RAGENT_USER_ROLE", "admin"),
+        expected_rerank_source=resolve_expected_rerank_source(),
     )
 
     timestamp = int(time.time() * 1000)
@@ -158,7 +158,7 @@ def main() -> int:
     assert_equal(top_chunk_metadata.get("retrievalMode"), "hybrid", "top retrieval mode")
     assert_equal(top_chunk_metadata.get("fusionStrategy"), "rrf", "top fusion strategy")
     assert_equal(top_chunk_metadata.get("rerankApplied"), True, "top rerank applied")
-    assert_equal(top_chunk_metadata.get("rerankSource"), "heuristic-reranker", "top reranker source")
+    assert_equal(top_chunk_metadata.get("rerankSource"), config.expected_rerank_source, "top reranker source")
     assert_equal(top_chunk_metadata.get("denseSource"), "python-qdrant-retrieval", "top dense source")
     assert_equal(top_chunk_metadata.get("keywordSource"), "python-bm25-retrieval", "top keyword source")
 
@@ -211,6 +211,23 @@ def assert_equal(actual: object, expected: object, label: str) -> None:
 def assert_in(value: object, collection: list[object], label: str) -> None:
     if value not in collection:
         raise AssertionError(f"{label} missing expected value: {value!r}")
+
+
+def resolve_expected_rerank_source() -> str:
+    explicit = os.environ.get("RAGENT_EXPECT_RERANK_SOURCE", "").strip()
+    if explicit:
+        return explicit
+
+    backend = os.environ.get("PYTHON_RERANKER_BACKEND", "auto").strip().lower() or "auto"
+    bge_url = (
+        os.environ.get("PYTHON_BGE_RERANKER_URL", "").strip()
+        or os.environ.get("BGE_RERANKER_URL", "").strip()
+    )
+    if backend in {"bge", "auto"} and bge_url:
+        return "bge-reranker-v2-m3"
+    if backend == "none":
+        return None
+    return "heuristic-reranker"
 
 
 if __name__ == "__main__":
