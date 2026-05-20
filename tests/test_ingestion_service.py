@@ -103,6 +103,7 @@ class IngestionServiceTests(unittest.TestCase):
         self.assertIsNotNone(updated.startedAt)
         self.assertIsNotNone(updated.finishedAt)
         self.assertEqual(updated.trace[-1].stage, "completed")
+        self.assertEqual(updated.metadata["claimedByWorkerId"], result.workerId)
 
     def test_worker_run_can_mark_task_failed(self) -> None:
         task = create_ingestion_task(

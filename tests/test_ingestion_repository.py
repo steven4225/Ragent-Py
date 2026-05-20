@@ -48,6 +48,43 @@ class SQLiteIngestionRepositoryTests(unittest.TestCase):
             self.assertEqual(len(pending), 1)
             self.assertEqual(pending[0].taskId, task.taskId)
 
+    def test_sqlite_repository_claim_pending_marks_task_running(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "ingestion.db"
+            repository = SQLiteIngestionRepository(str(db_path))
+
+            task = IngestionTaskStatusModel(
+                taskId="ing_sqlite_claim_1",
+                traceId="trace_sqlite_claim_1",
+                knowledgeBaseId="kb_sqlite",
+                documentId="doc_sqlite",
+                requestedBy="admin_sqlite",
+                tenantId="tenant_sqlite",
+                orgId="org_sqlite",
+                source=IngestionSourceModel(
+                    sourceType="upload",
+                    uri="file:///tmp/sqlite-claim.pdf",
+                    filename="sqlite-claim.pdf",
+                    mimeType="application/pdf",
+                    sizeBytes=512,
+                ),
+                status="pending",
+                currentStage="queued",
+                executionPlan=IngestionExecutionPlanModel(),
+            )
+            repository.upsert(task)
+
+            claimed = repository.claim_pending(worker_id="worker_sqlite", limit=1, task_ids=[task.taskId])
+            loaded = repository.get_by_id(task.taskId)
+            pending = repository.list_pending(limit=5)
+
+            self.assertEqual(len(claimed), 1)
+            self.assertEqual(claimed[0].status, "running")
+            self.assertEqual(claimed[0].metadata["claimedByWorkerId"], "worker_sqlite")
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded.status, "running")
+            self.assertEqual(len(pending), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

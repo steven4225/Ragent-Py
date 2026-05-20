@@ -19,6 +19,13 @@ class IngestionRepository(Protocol):
 
     def list_pending(self, limit: int = 1, task_ids: list[str] | None = None) -> list[IngestionTaskStatusModel]: ...
 
+    def claim_pending(
+        self,
+        worker_id: str,
+        limit: int = 1,
+        task_ids: list[str] | None = None,
+    ) -> list[IngestionTaskStatusModel]: ...
+
     def clear(self) -> None: ...
 
 
@@ -47,6 +54,28 @@ class InMemoryIngestionRepository:
             tasks = [task for task in tasks if task.taskId in allowed_ids]
         pending = [task for task in tasks if task.status == "pending" and task.currentStage == "queued"]
         return sorted(pending, key=lambda task: task.createdAt)[: max(limit, 0)]
+
+    def claim_pending(
+        self,
+        worker_id: str,
+        limit: int = 1,
+        task_ids: list[str] | None = None,
+    ) -> list[IngestionTaskStatusModel]:
+        claimed: list[IngestionTaskStatusModel] = []
+        for task in self.list_pending(limit=limit, task_ids=task_ids):
+            updated = task.model_copy(
+                update={
+                    "status": "running",
+                    "updatedAt": task.updatedAt,
+                    "metadata": {
+                        **task.metadata,
+                        "claimedByWorkerId": worker_id,
+                    },
+                }
+            )
+            self.upsert(updated)
+            claimed.append(updated)
+        return claimed
 
     def clear(self) -> None:
         self._tasks.clear()
@@ -87,38 +116,7 @@ class SQLiteIngestionRepository:
     def upsert(self, task: IngestionTaskStatusModel) -> None:
         payload_json = json.dumps(task.model_dump(mode="json"), ensure_ascii=False)
         with closing(self._connect()) as connection:
-            connection.execute(
-                """
-                INSERT INTO ingestion_tasks (
-                    task_id,
-                    tenant_id,
-                    org_id,
-                    status,
-                    current_stage,
-                    created_at,
-                    updated_at,
-                    payload_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(task_id) DO UPDATE SET
-                    tenant_id = excluded.tenant_id,
-                    org_id = excluded.org_id,
-                    status = excluded.status,
-                    current_stage = excluded.current_stage,
-                    created_at = excluded.created_at,
-                    updated_at = excluded.updated_at,
-                    payload_json = excluded.payload_json
-                """,
-                (
-                    task.taskId,
-                    task.tenantId,
-                    task.orgId,
-                    task.status,
-                    task.currentStage,
-                    task.createdAt,
-                    task.updatedAt,
-                    payload_json,
-                ),
-            )
+            self._upsert_connection(connection, task, payload_json)
             connection.commit()
 
     def get_by_id(self, task_id: str) -> IngestionTaskStatusModel | None:
@@ -165,10 +163,100 @@ class SQLiteIngestionRepository:
             rows = connection.execute(query, params).fetchall()
         return [IngestionTaskStatusModel.model_validate(json.loads(row["payload_json"])) for row in rows]
 
+    def claim_pending(
+        self,
+        worker_id: str,
+        limit: int = 1,
+        task_ids: list[str] | None = None,
+    ) -> list[IngestionTaskStatusModel]:
+        claimed: list[IngestionTaskStatusModel] = []
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = self._list_pending_rows(connection, limit=limit, task_ids=task_ids)
+            for row in rows:
+                task = IngestionTaskStatusModel.model_validate(json.loads(row["payload_json"]))
+                updated = task.model_copy(
+                    update={
+                        "status": "running",
+                        "updatedAt": task.updatedAt,
+                        "metadata": {
+                            **task.metadata,
+                            "claimedByWorkerId": worker_id,
+                        },
+                    }
+                )
+                self._upsert_connection(connection, updated)
+                claimed.append(updated)
+            connection.commit()
+        return claimed
+
     def clear(self) -> None:
         with closing(self._connect()) as connection:
             connection.execute("DELETE FROM ingestion_tasks")
             connection.commit()
+
+    def _list_pending_rows(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        limit: int,
+        task_ids: list[str] | None,
+    ) -> list[sqlite3.Row]:
+        where_clauses = ["status = 'pending'", "current_stage = 'queued'"]
+        params: list[object] = []
+        if task_ids:
+            placeholders = ",".join("?" for _ in task_ids)
+            where_clauses.append(f"task_id IN ({placeholders})")
+            params.extend(task_ids)
+        params.append(max(limit, 0))
+        query = f"""
+            SELECT payload_json
+            FROM ingestion_tasks
+            WHERE {' AND '.join(where_clauses)}
+            ORDER BY created_at ASC
+            LIMIT ?
+        """
+        return connection.execute(query, params).fetchall()
+
+    def _upsert_connection(
+        self,
+        connection: sqlite3.Connection,
+        task: IngestionTaskStatusModel,
+        payload_json: str | None = None,
+    ) -> None:
+        serialized = payload_json if payload_json is not None else json.dumps(task.model_dump(mode="json"), ensure_ascii=False)
+        connection.execute(
+            """
+            INSERT INTO ingestion_tasks (
+                task_id,
+                tenant_id,
+                org_id,
+                status,
+                current_stage,
+                created_at,
+                updated_at,
+                payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(task_id) DO UPDATE SET
+                tenant_id = excluded.tenant_id,
+                org_id = excluded.org_id,
+                status = excluded.status,
+                current_stage = excluded.current_stage,
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at,
+                payload_json = excluded.payload_json
+            """,
+            (
+                task.taskId,
+                task.tenantId,
+                task.orgId,
+                task.status,
+                task.currentStage,
+                task.createdAt,
+                task.updatedAt,
+                serialized,
+            ),
+        )
 
 
 def create_ingestion_repository() -> IngestionRepository:

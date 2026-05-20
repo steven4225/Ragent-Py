@@ -18,7 +18,7 @@ def run_ingestion_worker(limit: int = 1, task_ids: list[str] | None = None) -> I
     failed_task_ids: list[str] = []
     skipped_task_ids: list[str] = []
 
-    candidates = ingestion_repository.list_pending(limit=limit, task_ids=task_ids or None)
+    candidates = ingestion_repository.claim_pending(worker_id=worker_id, limit=limit, task_ids=task_ids or None)
     if task_ids:
         scheduled_ids = {task.taskId for task in candidates}
         skipped_task_ids.extend([task_id for task_id in task_ids if task_id not in scheduled_ids])
