@@ -110,6 +110,51 @@ class ChatServiceTests(unittest.TestCase):
         self.assertEqual(tool_events[1]["toolCall"]["status"], "running")
         self.assertEqual(tool_events[-1]["toolCall"]["status"], "succeeded")
 
+    def test_stream_message_completed_preserves_retrieval_and_tool_metadata(self) -> None:
+        source_text = "Atlas launch memo says rollback approval requires two green canary windows before production unlock."
+        encoded = b64encode(source_text.encode("utf-8")).decode("ascii")
+        task = create_ingestion_task(
+            IngestionTaskCreateRequestModel(
+                traceId="trace_stream_metadata",
+                knowledgeBaseId="kb_stream_metadata",
+                documentId="doc_stream_metadata",
+                requestedBy="admin_chat",
+                tenantId="tenant_test",
+                orgId="org_test",
+                source=IngestionSourceModel(
+                    sourceType="upload",
+                    uri=f"data:text/plain;base64,{encoded}",
+                    filename="atlas-launch.txt",
+                    mimeType="text/plain",
+                    sizeBytes=len(source_text),
+                ),
+                executionPlan=IngestionExecutionPlanModel(),
+            )
+        )
+        run_ingestion_worker(limit=1, task_ids=[task.taskId])
+
+        request = InternalChatRequestModel(
+            message="Please check setting chat.defaultModel and explain what the atlas launch memo requires before production unlock.",
+            conversationId="conv_stream_metadata",
+            userId="user_test",
+            tenantId="tenant_test",
+            orgId="org_test",
+            role="admin",
+        )
+
+        events = [json.loads(line) for line in iter_chat_stream_events(request)]
+        tool_events = [event for event in events if event["type"] == "tool.call"]
+        completed = next(event for event in events if event["type"] == "message.completed")
+        metadata = completed["assistantMessage"]["metadata"]
+
+        self.assertGreaterEqual(len(tool_events), 3)
+        self.assertEqual(metadata["retrievalSource"], "python-composite-retrieval")
+        self.assertGreater(metadata["context"]["evidenceCount"], 0)
+        self.assertGreater(len(metadata["retrievalExecution"]["chunks"]), 0)
+        self.assertGreater(len(metadata["toolCalls"]), 0)
+        self.assertEqual(metadata["toolCalls"][-1]["toolName"], "get_system_setting")
+        self.assertEqual(metadata["toolCalls"][-1]["status"], "succeeded")
+
 
 if __name__ == "__main__":
     unittest.main()

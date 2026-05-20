@@ -96,6 +96,12 @@ To replay the full ingestion -> worker -> Qdrant -> `/api/chat` validation again
 python scripts/verify_qdrant_e2e.py
 ```
 
+To verify `/api/chat/stream` preserves retrieval metadata and tool-call metadata through the BFF:
+
+```bash
+python scripts/verify_chat_stream_metadata_e2e.py
+```
+
 Optional environment overrides:
 
 - `RAGENT_WEB_BASE_URL`
