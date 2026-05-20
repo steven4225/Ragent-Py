@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+from urllib.parse import unquote_to_bytes
 from uuid import uuid4
 
 from ragent_python.contracts.ingestion import (
@@ -103,6 +105,7 @@ def _process_task(task: IngestionTaskStatusModel, worker_id: str) -> IngestionTa
         ingestion_repository.upsert(failed_task)
         return failed_task
 
+    parsed_text = _extract_source_text(task)
     parser_result = {
         "parserName": "python-mock-parser",
         "parserVersion": "0.1.0",
@@ -113,11 +116,11 @@ def _process_task(task: IngestionTaskStatusModel, worker_id: str) -> IngestionTa
             "title": task.source.filename,
             "mimeType": task.source.mimeType,
             "language": "en",
-            "charCount": 96,
+            "charCount": len(parsed_text),
             "pageCount": 1,
             "metadata": {"backend": "python", "workerId": worker_id},
             "content": {
-                "text": f"Parsed content for {task.source.filename}",
+                "text": parsed_text,
                 "sections": [],
             },
         },
@@ -133,13 +136,13 @@ def _process_task(task: IngestionTaskStatusModel, worker_id: str) -> IngestionTa
             "chunkId": f"{task.taskId}_chunk_0",
             "documentId": task.documentId,
             "chunkIndex": 0,
-            "text": f"Parsed content for {task.source.filename}",
-            "charCount": 35,
-            "tokenCount": 8,
+            "text": parsed_text,
+            "charCount": len(parsed_text),
+            "tokenCount": max(1, len(parsed_text.split())),
             "metadata": {
                 "sectionPath": [],
                 "startOffset": 0,
-                "endOffset": 35,
+                "endOffset": len(parsed_text),
                 "pageNumber": 1,
             },
         }
@@ -248,6 +251,22 @@ def _process_task(task: IngestionTaskStatusModel, worker_id: str) -> IngestionTa
     )
     ingestion_repository.upsert(completed_task)
     return completed_task
+
+
+def _extract_source_text(task: IngestionTaskStatusModel) -> str:
+    uri = str(task.source.uri)
+    if uri.startswith("data:"):
+        header, _, payload = uri.partition(",")
+        if not payload:
+            return f"Parsed content for {task.source.filename}"
+        try:
+            raw_bytes = base64.b64decode(payload) if ";base64" in header else unquote_to_bytes(payload)
+            decoded = raw_bytes.decode("utf-8", errors="replace").strip()
+            if decoded:
+                return decoded
+        except Exception:
+            pass
+    return f"Parsed content for {task.source.filename}"
 
 
 def _update_task(

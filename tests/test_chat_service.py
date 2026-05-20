@@ -2,13 +2,23 @@ from __future__ import annotations
 
 import json
 import unittest
+from base64 import b64encode
 
+from ragent_python.contracts.ingestion import (
+    IngestionExecutionPlanModel,
+    IngestionSourceModel,
+    IngestionTaskCreateRequestModel,
+)
 from ragent_python.contracts.internal_api import InternalChatRequestModel
+from ragent_python.services.ingestion_service import create_ingestion_task
 from ragent_python.services.chat_service import build_chat_turn_response, iter_chat_stream_events
+from ragent_python.storage.ingestion_repository import ingestion_repository
+from ragent_python.worker.ingestion_worker import run_ingestion_worker
 
 
 class ChatServiceTests(unittest.TestCase):
     def setUp(self) -> None:
+        ingestion_repository.clear()
         self.request = InternalChatRequestModel(
             message="hello from test",
             conversationId="conv_test",
@@ -29,6 +39,44 @@ class ChatServiceTests(unittest.TestCase):
         self.assertIn("Python chat runtime is active.", response.assistantMessage.content)
         self.assertFalse(response.plan.useRetrieval)
         self.assertFalse(response.plan.useTools)
+
+    def test_chat_can_reference_newly_ingested_evidence(self) -> None:
+        source_text = "Zephyr migration runbook says rollout owners must verify staging metrics before launch."
+        encoded = b64encode(source_text.encode("utf-8")).decode("ascii")
+        task = create_ingestion_task(
+            IngestionTaskCreateRequestModel(
+                traceId="trace_chat_ingested",
+                knowledgeBaseId="kb_chat_ingested",
+                documentId="doc_chat_ingested",
+                requestedBy="admin_chat",
+                tenantId="tenant_test",
+                orgId="org_test",
+                source=IngestionSourceModel(
+                    sourceType="upload",
+                    uri=f"data:text/plain;base64,{encoded}",
+                    filename="zephyr-runbook.txt",
+                    mimeType="text/plain",
+                    sizeBytes=len(source_text),
+                ),
+                executionPlan=IngestionExecutionPlanModel(),
+            )
+        )
+        run_ingestion_worker(limit=1, task_ids=[task.taskId])
+
+        response = build_chat_turn_response(
+            InternalChatRequestModel(
+                message="What does the zephyr runbook say about rollout owners?",
+                conversationId="conv_ingested",
+                userId="user_test",
+                tenantId="tenant_test",
+                orgId="org_test",
+                role="user",
+            )
+        )
+
+        self.assertTrue(response.plan.useRetrieval)
+        self.assertIn("Zephyr migration runbook says rollout owners", response.assistantMessage.content)
+        self.assertEqual(response.assistantMessage.metadata["retrievalSource"], "python-composite-retrieval")
 
     def test_stream_emits_expected_phase1_events(self) -> None:
         events = [json.loads(line) for line in iter_chat_stream_events(self.request)]
