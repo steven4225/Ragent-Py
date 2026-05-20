@@ -72,3 +72,17 @@ Relevant environment variables:
 - `PYTHON_QDRANT_VECTOR_SIZE`
 
 When `executionPlan.indexing.storeType=qdrant`, the ingestion worker writes chunk payloads into Qdrant during the indexing stage.
+
+To replay the full ingestion -> worker -> Qdrant -> `/api/chat` validation against running local services:
+
+```bash
+python scripts/verify_qdrant_e2e.py
+```
+
+Optional environment overrides:
+
+- `RAGENT_WEB_BASE_URL`
+- `RAGENT_QDRANT_URL`
+- `RAGENT_QDRANT_COLLECTION`
+- `RAGENT_TENANT_ID`
+- `RAGENT_ORG_ID`
