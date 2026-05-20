@@ -1,0 +1,24 @@
+# Migration planning and private working docs
+MIGRATION_*.md
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local-only notes and overrides
+*.local
+*.secret
+notes/
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+.deps/
