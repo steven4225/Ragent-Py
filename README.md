@@ -29,3 +29,28 @@ If using the `src/` layout directly, ensure `PYTHONPATH=src`.
 - `GET /internal/ingestion/tasks`
 - `POST /internal/ingestion/tasks`
 - `GET /internal/ingestion/tasks/{taskId}`
+
+## Ingestion Worker
+
+The ingestion task store is configurable:
+
+- `PYTHON_INGESTION_BACKEND=sqlite` for cross-process task sharing
+- `PYTHON_INGESTION_BACKEND=memory` for isolated local/testing flows
+
+Run one worker cycle manually:
+
+```bash
+python -m ragent_python.worker_runner --once
+```
+
+Run one worker cycle for a specific task:
+
+```bash
+python -m ragent_python.worker_runner --once --task-id ing_123
+```
+
+Run a polling worker loop:
+
+```bash
+python -m ragent_python.worker_runner
+```
