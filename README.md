@@ -76,6 +76,7 @@ Relevant environment variables:
 - `PYTHON_RERANK_CANDIDATE_COUNT`
 - `PYTHON_RERANK_RETRIEVAL_WEIGHT`
 - `PYTHON_RERANK_MODEL_WEIGHT`
+- legacy `BGE_RERANKER_URL` is also accepted for parity with the existing Go service wiring
 
 Hybrid retrieval behavior:
 
@@ -83,6 +84,7 @@ Hybrid retrieval behavior:
 - keyword results come from the local BM25 provider over the same local + ingested corpus
 - dense and keyword candidates are fused with reciprocal-rank fusion
 - reranking defaults to `auto`: if `PYTHON_BGE_RERANKER_URL` or legacy `BGE_RERANKER_URL` is set, Python uses the external BGE reranker; otherwise it falls back to the local heuristic model
+- the current self-hosted Docker image exposes `http://127.0.0.1:8091/v1/rerank`, while legacy adapters may still point at `/rerank`
 - set `PYTHON_RERANKER_BACKEND=heuristic` to force local reranking, or `PYTHON_RERANKER_BACKEND=none` to disable reranking entirely
 - fallback retrieval still preserves the ingestion/local providers when no hybrid candidates are found
 
