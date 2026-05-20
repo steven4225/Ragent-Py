@@ -80,8 +80,9 @@ class RetrievalServiceTests(unittest.TestCase):
 
         self.assertGreater(len(response.chunks), 0)
         self.assertEqual(response.chunks[0].knowledgeBaseId, "kb_ingested")
-        self.assertEqual(response.chunks[0].source, "python-ingestion-retrieval")
-        self.assertEqual(response.chunks[0].metadata["provider"], "ingestion-task")
+        self.assertEqual(response.chunks[0].source, "python-bm25-retrieval")
+        self.assertEqual(response.chunks[0].metadata["provider"], "bm25")
+        self.assertEqual(response.chunks[0].metadata["retrievalMode"], "keyword")
 
 
 if __name__ == "__main__":

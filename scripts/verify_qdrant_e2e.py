@@ -148,12 +148,19 @@ def main() -> int:
     assistant_text = chat["assistantMessage"]["content"]
     retrieval_execution = chat["assistantMessage"]["metadata"]["retrievalExecution"]
     top_chunk = retrieval_execution["chunks"][0]
+    top_chunk_metadata = top_chunk.get("metadata", {})
 
     if phrase not in assistant_text:
         raise AssertionError("Assistant response did not quote the newly indexed evidence.")
     assert_equal(top_chunk["source"], "python-qdrant-retrieval", "top retrieval chunk source")
     if phrase != top_chunk["content"]:
         raise AssertionError("Top retrieval chunk content does not match the ingested text.")
+    assert_equal(top_chunk_metadata.get("retrievalMode"), "hybrid", "top retrieval mode")
+    assert_equal(top_chunk_metadata.get("fusionStrategy"), "rrf", "top fusion strategy")
+    assert_equal(top_chunk_metadata.get("rerankApplied"), True, "top rerank applied")
+    assert_equal(top_chunk_metadata.get("rerankSource"), "heuristic-reranker", "top reranker source")
+    assert_equal(top_chunk_metadata.get("denseSource"), "python-qdrant-retrieval", "top dense source")
+    assert_equal(top_chunk_metadata.get("keywordSource"), "python-bm25-retrieval", "top keyword source")
 
     summary = {
         "taskId": task["taskId"],
@@ -164,6 +171,9 @@ def main() -> int:
         "retrievalSource": chat["assistantMessage"]["metadata"]["retrievalSource"],
         "topChunkSource": top_chunk["source"],
         "topChunkTitle": top_chunk["title"],
+        "topChunkRetrievalMode": top_chunk_metadata.get("retrievalMode"),
+        "topChunkFusionStrategy": top_chunk_metadata.get("fusionStrategy"),
+        "topChunkRerankSource": top_chunk_metadata.get("rerankSource"),
     }
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0

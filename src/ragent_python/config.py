@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     qdrant_collection: str = Field(default="ragent_python_chunks", alias="PYTHON_QDRANT_COLLECTION")
     qdrant_timeout_ms: int = Field(default=5000, alias="PYTHON_QDRANT_TIMEOUT_MS")
     qdrant_vector_size: int = Field(default=8, alias="PYTHON_QDRANT_VECTOR_SIZE")
+    reranker_backend: str = Field(default="heuristic", alias="PYTHON_RERANKER_BACKEND")
+    reranker_timeout_ms: int = Field(default=10000, alias="PYTHON_RERANKER_TIMEOUT_MS")
+    bge_reranker_url: str = Field(default="", alias="PYTHON_BGE_RERANKER_URL")
+    rerank_candidate_count: int = Field(default=20, alias="PYTHON_RERANK_CANDIDATE_COUNT")
+    rerank_retrieval_weight: float = Field(default=0.3, alias="PYTHON_RERANK_RETRIEVAL_WEIGHT")
+    rerank_model_weight: float = Field(default=0.7, alias="PYTHON_RERANK_MODEL_WEIGHT")
 
 
 @lru_cache(maxsize=1)

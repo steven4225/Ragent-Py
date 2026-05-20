@@ -17,6 +17,7 @@ from ragent_python.contracts.ingestion import (
 )
 from ragent_python.contracts.internal_api import InternalRetrievalRequestModel
 from ragent_python.retrieval.providers import clear_retrieval_provider_cache, extract_terms
+from ragent_python.retrieval.bm25_provider import BM25RetrievalProvider
 from ragent_python.retrieval.qdrant_provider import QdrantIndexProvider, QdrantIndexRecord
 from ragent_python.services.ingestion_service import create_ingestion_task
 from ragent_python.services.retrieval_service import execute_retrieval
@@ -144,6 +145,25 @@ class _FakeQdrantHandler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
 
+class _FakeRerankerHandler(BaseHTTPRequestHandler):
+    response_payload: dict[str, Any] = {"scores": [0.9], "indices": [0]}
+
+    def do_POST(self) -> None:  # noqa: N802
+        _ = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        self._write_json(200, self.response_payload)
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+        return
+
+    def _write_json(self, status: int, payload: dict[str, Any]) -> None:
+        encoded = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+
 @contextmanager
 def fake_qdrant_server():
     _FakeQdrantHandler.state = _FakeQdrantState()
@@ -152,6 +172,20 @@ def fake_qdrant_server():
     thread.start()
     try:
         yield server, _FakeQdrantHandler.state
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+
+@contextmanager
+def fake_reranker_server(response_payload: dict[str, Any]):
+    _FakeRerankerHandler.response_payload = response_payload
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _FakeRerankerHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
     finally:
         server.shutdown()
         thread.join(timeout=2)
@@ -320,6 +354,148 @@ class QdrantProviderTests(unittest.TestCase):
 
                 self.assertGreater(len(response.chunks), 0)
                 self.assertEqual(response.chunks[0].source, "python-qdrant-retrieval")
+
+    def test_bm25_provider_returns_keyword_hits_from_ingested_chunks(self) -> None:
+        task = create_ingestion_task(
+            IngestionTaskCreateRequestModel(
+                traceId="trace_bm25_ingested",
+                knowledgeBaseId="kb_bm25",
+                documentId="doc_bm25",
+                requestedBy="admin_bm25",
+                tenantId="tenant_bm25",
+                orgId="org_bm25",
+                source=IngestionSourceModel(
+                    sourceType="upload",
+                    uri="data:text/plain,Runbook says rollback approval requires dual canary success before unlock.",
+                    filename="runbook.txt",
+                    mimeType="text/plain",
+                    sizeBytes=96,
+                ),
+                executionPlan=IngestionExecutionPlanModel(),
+            )
+        )
+        run_ingestion_worker(limit=1, task_ids=[task.taskId])
+
+        provider = BM25RetrievalProvider()
+        results = provider.search(
+            InternalRetrievalRequestModel(
+                traceId="trace_bm25_search",
+                query="rollback approval dual canary unlock",
+                tenantId="tenant_bm25",
+                orgId="org_bm25",
+                knowledgeBaseIds=["kb_bm25"],
+            ),
+            extract_terms("rollback approval dual canary unlock"),
+        )
+
+        self.assertGreater(len(results), 0)
+        self.assertEqual(results[0].source, "python-bm25-retrieval")
+        self.assertEqual(results[0].metadata["provider"], "bm25")
+
+    def test_hybrid_retrieval_adds_fusion_metadata(self) -> None:
+        with fake_qdrant_server() as (server, _state):
+            with patched_env(
+                {
+                    "PYTHON_RETRIEVAL_BACKEND": "hybrid",
+                    "PYTHON_QDRANT_URL": f"http://127.0.0.1:{server.server_port}",
+                    "PYTHON_QDRANT_COLLECTION": "fusion_chunks",
+                }
+            ):
+                clear_retrieval_provider_cache()
+                task = create_ingestion_task(
+                    IngestionTaskCreateRequestModel(
+                        traceId="trace_hybrid_fusion",
+                        knowledgeBaseId="kb_hybrid_fusion",
+                        documentId="doc_hybrid_fusion",
+                        requestedBy="admin_hybrid",
+                        tenantId="tenant_hybrid",
+                        orgId="org_hybrid",
+                        source=IngestionSourceModel(
+                            sourceType="upload",
+                            uri="data:text/plain,Atlas release checklist requires rollback approval and two canary windows before unlock.",
+                            filename="atlas-fusion.txt",
+                            mimeType="text/plain",
+                            sizeBytes=120,
+                        ),
+                        executionPlan=IngestionExecutionPlanModel(
+                            embedding={"enabled": True, "model": "mock-embed", "adapter": "local"},
+                            indexing={"enabled": True, "indexName": "fusion_chunks", "storeType": "qdrant"},
+                        ),
+                    )
+                )
+                run_ingestion_worker(limit=1, task_ids=[task.taskId])
+
+                response = execute_retrieval(
+                    InternalRetrievalRequestModel(
+                        traceId="trace_hybrid_fusion_search",
+                        query="rollback approval canary unlock",
+                        tenantId="tenant_hybrid",
+                        orgId="org_hybrid",
+                    )
+                )
+
+                self.assertGreater(len(response.chunks), 0)
+                self.assertEqual(response.chunks[0].metadata["retrievalMode"], "hybrid")
+                self.assertEqual(response.chunks[0].metadata["fusionStrategy"], "rrf")
+                self.assertIn("keywordSource", response.chunks[0].metadata)
+                self.assertIn("denseSource", response.chunks[0].metadata)
+
+    def test_hybrid_retrieval_applies_bge_reranker_reordering(self) -> None:
+        with fake_qdrant_server() as (qdrant_server, _state):
+            with fake_reranker_server({"scores": [0.93, 0.22], "indices": [1, 0]} ) as reranker_server:
+                with patched_env(
+                    {
+                        "PYTHON_RETRIEVAL_BACKEND": "hybrid",
+                        "PYTHON_QDRANT_URL": f"http://127.0.0.1:{qdrant_server.server_port}",
+                        "PYTHON_QDRANT_COLLECTION": "rerank_chunks",
+                        "PYTHON_RERANKER_BACKEND": "bge",
+                        "PYTHON_BGE_RERANKER_URL": f"http://127.0.0.1:{reranker_server.server_port}/rerank",
+                    }
+                ):
+                    clear_retrieval_provider_cache()
+                    provider = QdrantIndexProvider(
+                        base_url=f"http://127.0.0.1:{qdrant_server.server_port}",
+                        collection="rerank_chunks",
+                    )
+                    provider.upsert_records(
+                        [
+                            QdrantIndexRecord(
+                                chunk_id="chunk_rerank_a",
+                                knowledge_base_id="kb_rerank",
+                                document_id="doc_rerank_a",
+                                title="Alpha Memo",
+                                content="Alpha memo mentions approval and unlock.",
+                                tenant_id="tenant_rerank",
+                                org_id="org_rerank",
+                                metadata={"filename": "alpha.txt"},
+                            ),
+                            QdrantIndexRecord(
+                                chunk_id="chunk_rerank_b",
+                                knowledge_base_id="kb_rerank",
+                                document_id="doc_rerank_b",
+                                title="Atlas Launch Memo",
+                                content="Atlas launch memo requires two canary windows before unlock.",
+                                tenant_id="tenant_rerank",
+                                org_id="org_rerank",
+                                metadata={"filename": "atlas.txt"},
+                            ),
+                        ],
+                        index_name="rerank_chunks",
+                    )
+
+                    response = execute_retrieval(
+                        InternalRetrievalRequestModel(
+                            traceId="trace_rerank_search",
+                            query="approval before unlock",
+                            tenantId="tenant_rerank",
+                            orgId="org_rerank",
+                            knowledgeBaseIds=["kb_rerank"],
+                        )
+                    )
+
+                    self.assertGreater(len(response.chunks), 1)
+                    self.assertEqual(response.chunks[0].title, "Atlas Launch Memo")
+                    self.assertEqual(response.chunks[0].metadata["rerankSource"], "bge-reranker-v2-m3")
 
 
 if __name__ == "__main__":

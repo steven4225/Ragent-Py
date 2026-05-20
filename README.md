@@ -57,7 +57,7 @@ python -m ragent_python.worker_runner
 
 ## Retrieval Backends
 
-Python retrieval now supports a provider chain with Qdrant-first lookup when configured.
+Python retrieval now supports a provider chain with Qdrant-first lookup, BM25 keyword recall, fusion, and reranking when configured.
 
 - `PYTHON_RETRIEVAL_BACKEND=hybrid` keeps Qdrant as the preferred backend and preserves local fallbacks
 - `PYTHON_RETRIEVAL_BACKEND=qdrant` enables Qdrant-first retrieval
@@ -70,6 +70,20 @@ Relevant environment variables:
 - `PYTHON_QDRANT_COLLECTION`
 - `PYTHON_QDRANT_TIMEOUT_MS`
 - `PYTHON_QDRANT_VECTOR_SIZE`
+- `PYTHON_RERANKER_BACKEND`
+- `PYTHON_RERANKER_TIMEOUT_MS`
+- `PYTHON_BGE_RERANKER_URL`
+- `PYTHON_RERANK_CANDIDATE_COUNT`
+- `PYTHON_RERANK_RETRIEVAL_WEIGHT`
+- `PYTHON_RERANK_MODEL_WEIGHT`
+
+Hybrid retrieval behavior:
+
+- dense results come from Qdrant when `PYTHON_RETRIEVAL_BACKEND` is `hybrid` or `qdrant`
+- keyword results come from the local BM25 provider over the same local + ingested corpus
+- dense and keyword candidates are fused with reciprocal-rank fusion
+- reranking defaults to a local heuristic model and can be switched to an HTTP BGE-style reranker with `PYTHON_RERANKER_BACKEND=bge`
+- fallback retrieval still preserves the ingestion/local providers when no hybrid candidates are found
 
 When `executionPlan.indexing.storeType=qdrant`, the ingestion worker writes chunk payloads into Qdrant during the indexing stage.
 
