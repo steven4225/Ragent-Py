@@ -23,5 +23,20 @@ class InMemoryIngestionRepository:
             tasks = [task for task in tasks if task.orgId == org_id]
         return sorted(tasks, key=lambda task: task.createdAt, reverse=True)
 
+    def list_pending(self, limit: int = 1, task_ids: list[str] | None = None) -> list[IngestionTaskStatusModel]:
+        tasks: Iterable[IngestionTaskStatusModel] = self._tasks.values()
+        if task_ids:
+            allowed_ids = set(task_ids)
+            tasks = [task for task in tasks if task.taskId in allowed_ids]
+        pending = [
+            task
+            for task in tasks
+            if task.status == "pending" and task.currentStage == "queued"
+        ]
+        return sorted(pending, key=lambda task: task.createdAt)[: max(limit, 0)]
+
+    def clear(self) -> None:
+        self._tasks.clear()
+
 
 ingestion_repository = InMemoryIngestionRepository()

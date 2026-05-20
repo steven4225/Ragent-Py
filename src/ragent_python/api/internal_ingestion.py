@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ragent_python.contracts.ingestion import IngestionTaskListResponseModel, IngestionTaskStatusModel
+from ragent_python.contracts.ingestion import (
+    IngestionTaskListResponseModel,
+    IngestionTaskStatusModel,
+    IngestionWorkerRunRequestModel,
+    IngestionWorkerRunResponseModel,
+)
 from ragent_python.contracts.internal_api import InternalIngestionTaskCreateRequestModel
 from ragent_python.services.ingestion_service import create_ingestion_task, get_ingestion_task, list_ingestion_tasks
+from ragent_python.worker.ingestion_worker import run_ingestion_worker
 
 router = APIRouter(prefix="/internal/ingestion", tags=["ingestion"])
 
@@ -30,3 +36,10 @@ async def internal_get_ingestion_task(task_id: str) -> IngestionTaskStatusModel:
     if task is None:
         raise HTTPException(status_code=404, detail={"code": "INGESTION_TASK_NOT_FOUND", "message": "Task not found."})
     return task
+
+
+@router.post("/worker/run", response_model=IngestionWorkerRunResponseModel)
+async def internal_run_ingestion_worker(
+    request: IngestionWorkerRunRequestModel,
+) -> IngestionWorkerRunResponseModel:
+    return run_ingestion_worker(limit=request.limit, task_ids=request.taskIds)

@@ -117,3 +117,16 @@ class IngestionTaskStatusModel(BaseModel):
 
 class IngestionTaskListResponseModel(BaseModel):
     items: list[IngestionTaskStatusModel] = Field(default_factory=list)
+
+
+class IngestionWorkerRunRequestModel(BaseModel):
+    limit: int = 1
+    taskIds: list[str] = Field(default_factory=list)
+
+
+class IngestionWorkerRunResponseModel(BaseModel):
+    workerId: str
+    processedTaskIds: list[str] = Field(default_factory=list)
+    succeededTaskIds: list[str] = Field(default_factory=list)
+    failedTaskIds: list[str] = Field(default_factory=list)
+    skippedTaskIds: list[str] = Field(default_factory=list)
