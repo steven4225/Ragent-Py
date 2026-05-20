@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Protocol
 
 from ragent_python.contracts.internal_api import InternalRetrievalRequestModel
 from ragent_python.contracts.public_api import RetrievalChunkModel
+from ragent_python.config import get_settings
 from ragent_python.storage.ingestion_repository import ingestion_repository
 
 
@@ -21,10 +23,14 @@ def score_text(haystack_parts: list[str], query_terms: list[str]) -> int:
     return sum(1 for term in query_terms if term in haystack)
 
 
-class RetrievalProvider(Protocol):
+class SearchProvider(Protocol):
     provider_name: str
 
     def search(self, request: InternalRetrievalRequestModel, query_terms: list[str]) -> list[RetrievalChunkModel]: ...
+
+
+class IndexProvider(Protocol):
+    provider_name: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,23 +176,87 @@ class IngestionTaskRetrievalProvider:
 class CompositeRetrievalProvider:
     provider_name = "python-composite-retrieval"
 
-    def __init__(self, providers: list[RetrievalProvider]) -> None:
+    def __init__(self, providers: list[SearchProvider]) -> None:
         self._providers = providers
+        self._provider_priority = {
+            provider.provider_name: index for index, provider in enumerate(providers)
+        }
 
     def search(self, request: InternalRetrievalRequestModel, query_terms: list[str]) -> list[RetrievalChunkModel]:
         aggregated: dict[str, RetrievalChunkModel] = {}
         for provider in self._providers:
-            for chunk in provider.search(request, query_terms):
+            try:
+                chunks = provider.search(request, query_terms)
+            except Exception:
+                continue
+            for chunk in chunks:
                 existing = aggregated.get(chunk.chunkId)
-                if existing is None or chunk.score > existing.score:
+                if existing is None:
                     aggregated[chunk.chunkId] = chunk
-        return sorted(aggregated.values(), key=lambda item: item.score, reverse=True)
+                    continue
+                if existing.source == chunk.source:
+                    if chunk.score > existing.score:
+                        aggregated[chunk.chunkId] = chunk
+                    continue
+                if existing.source != "python-qdrant-retrieval" and chunk.source == "python-qdrant-retrieval":
+                    aggregated[chunk.chunkId] = chunk
+                    continue
+                if chunk.score > existing.score and existing.source != "python-qdrant-retrieval":
+                    aggregated[chunk.chunkId] = chunk
+        return sorted(
+            aggregated.values(),
+            key=lambda item: (
+                self._provider_priority.get(item.source, len(self._provider_priority)),
+                -item.score,
+            ),
+        )
 
 
 def build_default_retrieval_provider() -> CompositeRetrievalProvider:
-    return CompositeRetrievalProvider(
-        providers=[
-            IngestionTaskRetrievalProvider(),
-            LocalStaticRetrievalProvider(),
-        ]
+    settings = get_settings()
+    providers: list[SearchProvider] = []
+    qdrant_provider = _build_qdrant_provider()
+    if settings.retrieval_backend in {"qdrant", "hybrid"} and qdrant_provider is not None:
+        providers.append(qdrant_provider)
+    if settings.retrieval_backend in {"local", "hybrid", "qdrant"}:
+        providers.extend(
+            [
+                IngestionTaskRetrievalProvider(),
+                LocalStaticRetrievalProvider(),
+            ]
+        )
+    return CompositeRetrievalProvider(providers=providers)
+
+
+@lru_cache(maxsize=1)
+def _build_qdrant_provider():
+    settings = get_settings()
+    if not settings.qdrant_url.strip():
+        return None
+    from ragent_python.retrieval.qdrant_provider import QdrantIndexProvider
+
+    return QdrantIndexProvider(
+        base_url=settings.qdrant_url,
+        api_key=settings.qdrant_api_key,
+        collection=settings.qdrant_collection,
+        timeout_ms=settings.qdrant_timeout_ms,
+        vector_size=settings.qdrant_vector_size,
     )
+
+
+@lru_cache(maxsize=1)
+def get_retrieval_provider() -> CompositeRetrievalProvider:
+    return build_default_retrieval_provider()
+
+
+def get_index_provider(store_type: str | None):
+    normalized = (store_type or "").strip().lower()
+    if normalized not in {"qdrant", "mock-qdrant"}:
+        return None
+    return _build_qdrant_provider()
+
+
+def clear_retrieval_provider_cache() -> None:
+    get_settings.cache_clear()
+    _build_qdrant_provider.cache_clear()
+    get_retrieval_provider.cache_clear()

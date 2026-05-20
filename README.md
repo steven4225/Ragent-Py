@@ -54,3 +54,21 @@ Run a polling worker loop:
 ```bash
 python -m ragent_python.worker_runner
 ```
+
+## Retrieval Backends
+
+Python retrieval now supports a provider chain with Qdrant-first lookup when configured.
+
+- `PYTHON_RETRIEVAL_BACKEND=hybrid` keeps Qdrant as the preferred backend and preserves local fallbacks
+- `PYTHON_RETRIEVAL_BACKEND=qdrant` enables Qdrant-first retrieval
+- `PYTHON_RETRIEVAL_BACKEND=local` keeps only the local fallback providers
+
+Relevant environment variables:
+
+- `PYTHON_QDRANT_URL`
+- `PYTHON_QDRANT_API_KEY`
+- `PYTHON_QDRANT_COLLECTION`
+- `PYTHON_QDRANT_TIMEOUT_MS`
+- `PYTHON_QDRANT_VECTOR_SIZE`
+
+When `executionPlan.indexing.storeType=qdrant`, the ingestion worker writes chunk payloads into Qdrant during the indexing stage.

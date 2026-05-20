@@ -10,6 +10,8 @@ from ragent_python.contracts.ingestion import (
     IngestionWorkerRunResponseModel,
 )
 from ragent_python.contracts.public_api import utc_now_iso
+from ragent_python.retrieval.providers import get_index_provider
+from ragent_python.retrieval.qdrant_provider import QdrantIndexRecord
 from ragent_python.storage.ingestion_repository import ingestion_repository
 
 
@@ -198,21 +200,32 @@ def _process_task(task: IngestionTaskStatusModel, worker_id: str) -> IngestionTa
         )
 
     if current_task.executionPlan.indexing.enabled:
-        index_write_result = {
-            "status": "succeeded",
-            "indexName": current_task.executionPlan.indexing.indexName or "mock-index",
-            "storeType": current_task.executionPlan.indexing.storeType or "mock-store",
-            "source": "python-mock-indexer",
-            "operation": "upsert",
-            "recordCount": len(chunks),
-            "indexedChunkCount": len(chunks),
-            "skippedRecordCount": 0,
-            "replacedRecordCount": 0,
-            "deletedRecordCount": 0,
-            "records": [],
-            "errorMessage": None,
-            "metadata": {"backend": "python", "workerId": worker_id},
-        }
+        try:
+            index_write_result = _index_chunks(current_task=current_task, worker_id=worker_id)
+        except Exception as exc:
+            failed_task = _update_task(
+                current_task,
+                status="failed",
+                current_stage="failed",
+                finished_at=utc_now_iso(),
+                failure_reason="Indexing failed",
+                failure_stage="indexing",
+                error_message=str(exc),
+                retryable=False,
+                trace_event=IngestionProcessingTraceEventModel(
+                    traceId=task.traceId,
+                    taskId=task.taskId,
+                    stage="failed",
+                    level="error",
+                    status="failed",
+                    message="Indexing failed.",
+                    tenantId=task.tenantId,
+                    orgId=task.orgId,
+                    metadata={"backend": "python", "workerId": worker_id, "stage": "indexing"},
+                ),
+            )
+            ingestion_repository.upsert(failed_task)
+            return failed_task
         current_task = _update_task(
             current_task,
             status="running",
@@ -267,6 +280,55 @@ def _extract_source_text(task: IngestionTaskStatusModel) -> str:
         except Exception:
             pass
     return f"Parsed content for {task.source.filename}"
+
+
+def _index_chunks(*, current_task: IngestionTaskStatusModel, worker_id: str) -> dict:
+    store_type = current_task.executionPlan.indexing.storeType or "mock-store"
+    index_name = current_task.executionPlan.indexing.indexName or "mock-index"
+    provider = get_index_provider(store_type)
+    if provider is None:
+        return {
+            "status": "succeeded",
+            "indexName": index_name,
+            "storeType": store_type,
+            "source": "python-mock-indexer",
+            "operation": "upsert",
+            "recordCount": len(current_task.chunks),
+            "indexedChunkCount": len(current_task.chunks),
+            "skippedRecordCount": 0,
+            "replacedRecordCount": 0,
+            "deletedRecordCount": 0,
+            "records": [],
+            "errorMessage": None,
+            "metadata": {"backend": "python", "workerId": worker_id},
+        }
+
+    parser_document = current_task.parserResult.get("parsedDocument", {}) if isinstance(current_task.parserResult, dict) else {}
+    document_title = parser_document.get("title") if isinstance(parser_document.get("title"), str) else current_task.source.filename
+    records = [
+        QdrantIndexRecord(
+            chunk_id=str(chunk["chunkId"]),
+            knowledge_base_id=current_task.knowledgeBaseId,
+            document_id=str(chunk["documentId"]),
+            title=document_title,
+            content=str(chunk["text"]),
+            tenant_id=current_task.tenantId,
+            org_id=current_task.orgId,
+            metadata={
+                "filename": current_task.source.filename,
+                "taskId": current_task.taskId,
+                "traceId": current_task.traceId,
+                "chunkIndex": chunk.get("chunkIndex", 0),
+                "sourceUri": current_task.source.uri,
+            },
+        )
+        for chunk in current_task.chunks
+        if isinstance(chunk, dict) and {"chunkId", "documentId", "text"}.issubset(chunk)
+    ]
+    result = provider.upsert_records(records, index_name=index_name, idempotency_key=current_task.taskId)
+    result.setdefault("metadata", {})
+    result["metadata"].update({"backend": "python", "workerId": worker_id})
+    return result
 
 
 def _update_task(

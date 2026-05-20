@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="info", alias="PYTHON_LOG_LEVEL")
     host: str = Field(default="0.0.0.0", alias="PYTHON_HOST")
     port: int = Field(default=8000, alias="PYTHON_PORT")
+    retrieval_backend: str = Field(default="hybrid", alias="PYTHON_RETRIEVAL_BACKEND")
     ingestion_backend: str = Field(default="sqlite", alias="PYTHON_INGESTION_BACKEND")
     ingestion_sqlite_path: str = Field(
         default=str(PROJECT_ROOT / ".runtime" / "ingestion.db"),
@@ -26,6 +27,11 @@ class Settings(BaseSettings):
     )
     ingestion_worker_poll_ms: int = Field(default=1000, alias="PYTHON_INGESTION_WORKER_POLL_MS")
     ingestion_worker_batch_size: int = Field(default=10, alias="PYTHON_INGESTION_WORKER_BATCH_SIZE")
+    qdrant_url: str = Field(default="", alias="PYTHON_QDRANT_URL")
+    qdrant_api_key: str = Field(default="", alias="PYTHON_QDRANT_API_KEY")
+    qdrant_collection: str = Field(default="ragent_python_chunks", alias="PYTHON_QDRANT_COLLECTION")
+    qdrant_timeout_ms: int = Field(default=5000, alias="PYTHON_QDRANT_TIMEOUT_MS")
+    qdrant_vector_size: int = Field(default=8, alias="PYTHON_QDRANT_VECTOR_SIZE")
 
 
 @lru_cache(maxsize=1)
