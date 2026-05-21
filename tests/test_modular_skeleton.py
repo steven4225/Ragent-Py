@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from typing import Literal
+
+from pydantic import BaseModel
 
 from ragent_python.contracts.internal_api import InternalRetrievalRequestModel
 from ragent_python.core.generation.adapter import (
@@ -11,7 +14,8 @@ from ragent_python.core.generation.adapter import (
 )
 from ragent_python.core.modules.contract import Module, ModuleHookResult
 from ragent_python.core.router.intent import IntentPattern
-from ragent_python.infra.eval.contract import EvalCase, EvalMetricResult, EvalSuite
+from ragent_python.infra.eval.contract import EvalCase, EvalMetric, EvalMetricResult, EvalSuite
+from ragent_python.infra.eval.registry import EvalSuiteRegistry
 from ragent_python.infra.ingestion.schema_adapter import (
     IngestionSchemaAdapter,
     IngestionSchemaAdapterRegistry,
@@ -23,7 +27,9 @@ from ragent_python.infra.llm.resolver import (
     list_known_providers,
     resolve_generation_adapter,
 )
+from ragent_python.infra.registries.intent_pattern import IntentPatternRegistry
 from ragent_python.infra.registries.module_registry import ModuleRegistry
+from ragent_python.infra.registries.renderer_block import RendererBlockRegistry
 from ragent_python.infra.registries.retrieval_source import (
     RetrievalSourceRegistry,
     RetrievalSourceSpec,
@@ -107,29 +113,62 @@ class ModularSkeletonTests(unittest.TestCase):
         self.assertEqual([spec.name for spec in resolved], ["always"])
 
     def test_module_registry_bootstrap_fan_out(self) -> None:
-        tool_packs = ToolPackRegistry()
-        retrieval_sources = RetrievalSourceRegistry()
-        registry = ModuleRegistry(
-            tool_packs=tool_packs,
-            retrieval_sources=retrieval_sources,
-        )
+        hooks, harness = _build_full_hook_fixture()
+        registry = _build_isolated_module_registry(harness)
 
-        echo = MCPToolDefinition(
-            name="echo",
-            description="Echo args.",
-            keywords=("echo",),
-            requires_admin=False,
-            execute=lambda args, ctx: {"summary": "ok", "data": args},
-        )
-        pack = ToolPack(name="stub-pack", module="stub", tools=(echo,))
-        intent = IntentPattern(name="stub.intent", module="stub", keywords=("foo",))
-        hooks = ModuleHookResult(tool_pack=pack, intent_patterns=(intent,))
         registry.register(_StubModule(hooks))
         registry.bootstrap()
         registry.bootstrap()
 
-        self.assertEqual(tool_packs.list_packs(), [pack])
-        self.assertEqual(registry.intent_patterns, [intent])
+        self.assertEqual(harness.tool_packs.list_packs(), [hooks.tool_pack])
+        self.assertEqual(
+            [spec.name for spec in harness.retrieval_sources.list_specs()],
+            [hooks.retrieval_sources[0].name],
+        )
+        self.assertEqual(
+            harness.ingestion_adapters.list_adapters(),
+            list(hooks.ingestion_adapters),
+        )
+        self.assertEqual(
+            harness.renderer_blocks.list_blocks(),
+            list(hooks.renderer_blocks),
+        )
+        self.assertEqual(
+            harness.intent_patterns.list_patterns(),
+            list(hooks.intent_patterns),
+        )
+        self.assertEqual(
+            harness.eval_suites.list_suites(),
+            list(hooks.evals),
+        )
+
+        self.assertEqual(registry.ingestion_adapters, list(hooks.ingestion_adapters))
+        self.assertEqual(registry.renderer_blocks, list(hooks.renderer_blocks))
+        self.assertEqual(registry.intent_patterns, list(hooks.intent_patterns))
+        self.assertEqual(registry.eval_suites, list(hooks.evals))
+
+    def test_module_registry_clear_resets_sub_registries(self) -> None:
+        hooks, harness = _build_full_hook_fixture()
+        registry = _build_isolated_module_registry(harness)
+
+        registry.register(_StubModule(hooks))
+        registry.bootstrap()
+
+        registry.clear()
+        self.assertEqual(harness.tool_packs.list_packs(), [])
+        self.assertEqual(harness.retrieval_sources.list_specs(), [])
+        self.assertEqual(harness.ingestion_adapters.list_adapters(), [])
+        self.assertEqual(harness.renderer_blocks.list_blocks(), [])
+        self.assertEqual(harness.intent_patterns.list_patterns(), [])
+        self.assertEqual(harness.eval_suites.list_suites(), [])
+
+        registry.register(_StubModule(hooks))
+        registry.bootstrap()
+        self.assertEqual(harness.tool_packs.list_packs(), [hooks.tool_pack])
+        self.assertEqual(
+            harness.eval_suites.list_suites(),
+            list(hooks.evals),
+        )
 
     def test_ingestion_schema_adapter_registry_resolves_first_match(self) -> None:
         registry = IngestionSchemaAdapterRegistry()
@@ -229,6 +268,90 @@ class ModularSkeletonTests(unittest.TestCase):
         )
         self.assertEqual(suite.cases[0].case_id, "c1")
         self.assertEqual(suite.metrics[0].compute("", "", []).score, 1.0)
+
+
+class _StubRendererBlock(BaseModel):
+    type: Literal["stub.block"] = "stub.block"
+    value: str = ""
+
+
+class _RegistryHarness:
+    def __init__(self) -> None:
+        self.tool_packs = ToolPackRegistry()
+        self.retrieval_sources = RetrievalSourceRegistry()
+        self.ingestion_adapters = IngestionSchemaAdapterRegistry()
+        self.renderer_blocks = RendererBlockRegistry()
+        self.intent_patterns = IntentPatternRegistry()
+        self.eval_suites = EvalSuiteRegistry()
+
+
+class _StubProvider:
+    provider_name = "stub"
+
+    def search(self, *_args, **_kwargs):  # pragma: no cover - not invoked
+        return []
+
+
+class _StubIngestionAdapter:
+    name = "stub.ingestion"
+    module = "stub"
+
+    def accepts(self, _source) -> bool:  # pragma: no cover - not invoked
+        return False
+
+    def parse(self, _raw, _source):  # pragma: no cover - not invoked
+        return []
+
+    def to_chunks(self, _records):  # pragma: no cover - not invoked
+        return []
+
+
+def _stub_metric(_q: str, _a: str, _c: list[str]) -> EvalMetricResult:
+    return EvalMetricResult(metric="stub", score=1.0)
+
+
+def _build_full_hook_fixture() -> tuple[ModuleHookResult, _RegistryHarness]:
+    tool = MCPToolDefinition(
+        name="echo",
+        description="Echo args.",
+        keywords=("echo",),
+        requires_admin=False,
+        execute=lambda args, ctx: {"summary": "ok", "data": args},
+    )
+    pack = ToolPack(name="stub-pack", module="stub", tools=(tool,))
+    retrieval_spec = RetrievalSourceSpec(
+        name="stub.source",
+        module="stub",
+        build_provider=_StubProvider,
+        selector=lambda _request: True,
+    )
+    intent = IntentPattern(name="stub.intent", module="stub", keywords=("foo",))
+    suite = EvalSuite(
+        name="stub.suite",
+        module="stub",
+        cases=(EvalCase(case_id="c1", query="hello"),),
+        metrics=(EvalMetric(name="stub", description="constant", compute=_stub_metric),),
+    )
+    hooks = ModuleHookResult(
+        tool_pack=pack,
+        retrieval_sources=(retrieval_spec,),
+        ingestion_adapters=(_StubIngestionAdapter(),),
+        renderer_blocks=(_StubRendererBlock,),
+        intent_patterns=(intent,),
+        evals=(suite,),
+    )
+    return hooks, _RegistryHarness()
+
+
+def _build_isolated_module_registry(harness: _RegistryHarness) -> ModuleRegistry:
+    return ModuleRegistry(
+        tool_packs=harness.tool_packs,
+        retrieval_sources=harness.retrieval_sources,
+        ingestion_adapters=harness.ingestion_adapters,
+        renderer_blocks=harness.renderer_blocks,
+        intent_patterns=harness.intent_patterns,
+        eval_suites=harness.eval_suites,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
