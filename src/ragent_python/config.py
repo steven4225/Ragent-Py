@@ -41,6 +41,20 @@ class Settings(BaseSettings):
     rerank_model_weight: float = Field(default=0.7, alias="PYTHON_RERANK_MODEL_WEIGHT")
     platform_state_path: str = Field(default="", alias="PYTHON_PLATFORM_STATE_PATH")
     legacy_platform_state_path: str = Field(default="", alias="TS_PLATFORM_STATE_PATH")
+    llm_provider: str = Field(default="auto", alias="PYTHON_LLM_PROVIDER")
+    llm_model: str = Field(default="", alias="PYTHON_LLM_MODEL")
+    llm_fallback_chain: str = Field(
+        default="openai,anthropic,ollama,mock",
+        alias="PYTHON_LLM_FALLBACK_CHAIN",
+    )
+    llm_max_input_tokens: int = Field(default=16000, alias="PYTHON_LLM_MAX_INPUT_TOKENS")
+    llm_max_output_tokens: int = Field(default=2000, alias="PYTHON_LLM_MAX_OUTPUT_TOKENS")
+    llm_temperature: float = Field(default=0.2, alias="PYTHON_LLM_TEMPERATURE")
+    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    openai_base_url: str = Field(default="", alias="OPENAI_BASE_URL")
+    anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    anthropic_base_url: str = Field(default="", alias="ANTHROPIC_BASE_URL")
+    ollama_base_url: str = Field(default="", alias="OLLAMA_BASE_URL")
 
 
 @lru_cache(maxsize=1)

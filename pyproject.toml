@@ -15,6 +15,9 @@ dependencies = [
 dev = [
   "pytest>=8.3,<9.0",
 ]
+llm-openai = []
+llm-anthropic = []
+llm-ollama = []
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]
