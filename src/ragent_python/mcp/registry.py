@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from ragent_python.contracts.mcp import MCPExecutionContextModel
+from ragent_python.mcp.platform_state import get_scoped_setting
+from ragent_python.services.ingestion_service import get_ingestion_task
 
 
 ToolExecutor = Callable[[dict[str, Any], MCPExecutionContextModel], dict[str, Any]]
@@ -57,15 +59,41 @@ def _get_system_setting(args: dict[str, Any], context: MCPExecutionContextModel)
         },
     }
     key = str(args.get("key", "")).strip()
-    item = settings.get(key)
+    item = get_scoped_setting(key, context.actor.tenantId, context.actor.orgId) or settings.get(key)
     if not item:
         raise ValueError(f"System setting '{key}' not found for actor {context.actor.userId}.")
     return {
         "summary": f"Read system setting '{key}'.",
         "data": {
             "key": key,
-            "value": item["value"],
-            "description": item["description"],
+            "value": item.get("value"),
+            "description": item.get("description"),
+        },
+    }
+
+
+def _get_ingestion_task(args: dict[str, Any], context: MCPExecutionContextModel) -> dict[str, Any]:
+    task_id = str(args.get("taskId", "")).strip()
+    if not task_id:
+        raise ValueError("`taskId` is required.")
+
+    task = get_ingestion_task(task_id)
+    if task is None:
+        raise ValueError(f"Ingestion task '{task_id}' not found.")
+    if context.actor.tenantId is not None and task.tenantId != context.actor.tenantId:
+        raise ValueError(f"Ingestion task '{task_id}' not found.")
+    if context.actor.orgId is not None and task.orgId != context.actor.orgId:
+        raise ValueError(f"Ingestion task '{task_id}' not found.")
+
+    return {
+        "summary": f"Ingestion task '{task_id}' is currently {task.status}.",
+        "data": {
+            "taskId": task.taskId,
+            "status": task.status,
+            "currentStage": task.currentStage,
+            "traceId": task.traceId,
+            "knowledgeBaseId": task.knowledgeBaseId,
+            "documentId": task.documentId,
         },
     }
 
@@ -84,6 +112,13 @@ TOOLS: tuple[MCPToolDefinition, ...] = (
         keywords=("setting", "settings", "system setting"),
         requires_admin=True,
         execute=_get_system_setting,
+    ),
+    MCPToolDefinition(
+        name="get_ingestion_task",
+        description="Read one ingestion task by task id.",
+        keywords=("ingestion task", "task status", "ingestion status"),
+        requires_admin=True,
+        execute=_get_ingestion_task,
     ),
 )
 

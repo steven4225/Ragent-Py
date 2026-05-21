@@ -32,6 +32,7 @@ def execute_mcp_runtime(request: MCPExecuteRequestModel) -> MCPExecuteResponseMo
                     status="failed",
                     args=planned_call.args,
                     output={
+                        "summary": f"Tool '{planned_call.toolName}' is not registered.",
                         "error": f"Tool '{planned_call.toolName}' is not registered.",
                     },
                 )
@@ -57,7 +58,8 @@ def execute_mcp_runtime(request: MCPExecuteRequestModel) -> MCPExecuteResponseMo
                     status="failed",
                     args=planned_call.args,
                     output={
-                        "error": "Tool requires admin scope.",
+                        "summary": "Admin role required.",
+                        "error": "Admin role required.",
                     },
                 )
             )
@@ -124,6 +126,7 @@ def execute_mcp_runtime(request: MCPExecuteRequestModel) -> MCPExecuteResponseMo
                     status="failed",
                     args=planned_call.args,
                     output={
+                        "summary": str(error),
                         "error": str(error),
                     },
                 )

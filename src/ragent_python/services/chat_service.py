@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Iterator
 from uuid import uuid4
@@ -45,6 +46,14 @@ def _build_assistant_text(request: InternalChatRequestModel) -> str:
 
 def _plan_tool_call(request: InternalChatRequestModel, trace_id: str) -> MCPPlannedToolCallModel | None:
     lowered = request.message.lower()
+    if "ingestion task" in lowered or "task status" in lowered:
+        match = re.search(r"\b(ing_[a-z0-9]+)\b", lowered)
+        if match:
+            return MCPPlannedToolCallModel(
+                toolCallId=f"{trace_id}_tool_ingestion",
+                toolName="get_ingestion_task",
+                args={"taskId": match.group(1)},
+            )
     if "knowledge base" in lowered or "knowledge bases" in lowered or "kb" in lowered:
         return MCPPlannedToolCallModel(
             toolCallId=f"{trace_id}_tool_kb",
@@ -52,10 +61,12 @@ def _plan_tool_call(request: InternalChatRequestModel, trace_id: str) -> MCPPlan
             args={"limit": 10},
         )
     if "setting" in lowered:
+        key_match = re.search(r"\bsetting\s+([A-Za-z0-9][A-Za-z0-9._-]*)", request.message, re.IGNORECASE)
+        key = key_match.group(1).rstrip(".,!?;:") if key_match else "chat.defaultModel"
         return MCPPlannedToolCallModel(
             toolCallId=f"{trace_id}_tool_setting",
             toolName="get_system_setting",
-            args={"key": "chat.defaultModel"},
+            args={"key": key},
         )
     return None
 

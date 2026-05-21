@@ -110,6 +110,23 @@ class ChatServiceTests(unittest.TestCase):
         self.assertEqual(tool_events[1]["toolCall"]["status"], "running")
         self.assertEqual(tool_events[-1]["toolCall"]["status"], "succeeded")
 
+    def test_stream_extracts_requested_setting_key_for_tool_call(self) -> None:
+        request = InternalChatRequestModel(
+            message="Please read system setting auth.scope.e2e.dynamic-key.",
+            conversationId="conv_setting_key",
+            userId="admin_test",
+            tenantId="tenant_test",
+            orgId="org_test",
+            role="admin",
+        )
+
+        events = [json.loads(line) for line in iter_chat_stream_events(request)]
+        tool_events = [event for event in events if event["type"] == "tool.call"]
+
+        self.assertGreaterEqual(len(tool_events), 3)
+        self.assertEqual(tool_events[0]["toolCall"]["toolName"], "get_system_setting")
+        self.assertEqual(tool_events[0]["toolCall"]["args"]["key"], "auth.scope.e2e.dynamic-key")
+
     def test_stream_message_completed_preserves_retrieval_and_tool_metadata(self) -> None:
         source_text = "Atlas launch memo says rollback approval requires two green canary windows before production unlock."
         encoded = b64encode(source_text.encode("utf-8")).decode("ascii")

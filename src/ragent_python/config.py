@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     rerank_candidate_count: int = Field(default=20, alias="PYTHON_RERANK_CANDIDATE_COUNT")
     rerank_retrieval_weight: float = Field(default=0.3, alias="PYTHON_RERANK_RETRIEVAL_WEIGHT")
     rerank_model_weight: float = Field(default=0.7, alias="PYTHON_RERANK_MODEL_WEIGHT")
+    platform_state_path: str = Field(default="", alias="PYTHON_PLATFORM_STATE_PATH")
+    legacy_platform_state_path: str = Field(default="", alias="TS_PLATFORM_STATE_PATH")
 
 
 @lru_cache(maxsize=1)
