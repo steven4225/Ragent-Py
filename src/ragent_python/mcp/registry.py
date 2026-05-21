@@ -1,11 +1,29 @@
+"""MCP tool registry — thin facade over the platform `ToolPackRegistry`.
+
+Historically this module hard-coded the platform-admin tools. After Step B,
+each `MCPToolDefinition` is owned by a `core.modules.Module` and contributed
+via a `ToolPack`; this file only exposes:
+
+- `MCPToolDefinition` / `ToolExecutor` — the shared tool dataclass and the
+  executor callable type (used by tool implementations across modules and by
+  `infra/registries/tool_pack.py`'s typing).
+- `list_mcp_tools()` / `get_mcp_tool()` — back-compat lookup helpers that
+  forward to the shared `ToolPackRegistry`. Call sites (e.g.
+  `services/mcp_service.py`) do not need to know that tools now flow through
+  modules.
+
+A lazy `_ensure_default_modules_bootstrapped()` is invoked at the top of each
+lookup so the platform-admin module is registered exactly once, idempotently,
+even when callers reach the MCP runtime directly without going through
+`main.create_app()` (e.g. service-level unit tests).
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable
 
 from ragent_python.contracts.mcp import MCPExecutionContextModel
-from ragent_python.mcp.platform_state import get_scoped_setting
-from ragent_python.services.ingestion_service import get_ingestion_task
 
 
 ToolExecutor = Callable[[dict[str, Any], MCPExecutionContextModel], dict[str, Any]]
@@ -20,115 +38,34 @@ class MCPToolDefinition:
     execute: ToolExecutor
 
 
-def _list_knowledge_bases(_: dict[str, Any], __: MCPExecutionContextModel) -> dict[str, Any]:
-    items = [
-        {
-            "knowledgeBaseId": "kb_policy",
-            "name": "Policy Base",
-            "documentCount": 12,
-        },
-        {
-            "knowledgeBaseId": "kb_ops",
-            "name": "Ops Handbook",
-            "documentCount": 8,
-        },
-        {
-            "knowledgeBaseId": "kb_product",
-            "name": "Product Notes",
-            "documentCount": 16,
-        },
-    ]
-    return {
-        "summary": f"Listed {len(items)} knowledge bases.",
-        "data": {
-            "total": len(items),
-            "items": items,
-        },
-    }
+def _ensure_default_modules_bootstrapped() -> None:
+    """Register and bootstrap the default platform modules if not already.
 
+    Delegates to the canonical `bootstrap_default_modules()` in
+    `ragent_python.modules`, which is idempotent and survives the
+    `ModuleRegistry.clear()` cascade (since clearing the global registry
+    also resets the sub-registries, the next call here will simply
+    re-register and re-bootstrap).
 
-def _get_system_setting(args: dict[str, Any], context: MCPExecutionContextModel) -> dict[str, Any]:
-    settings = {
-        "chat.defaultModel": {
-            "value": "gpt-5.4-mini",
-            "description": "Default chat model in the control plane.",
-        },
-        "retrieval.adapter": {
-            "value": "python-local-retrieval",
-            "description": "Current retrieval adapter id.",
-        },
-    }
-    key = str(args.get("key", "")).strip()
-    item = get_scoped_setting(key, context.actor.tenantId, context.actor.orgId) or settings.get(key)
-    if not item:
-        raise ValueError(f"System setting '{key}' not found for actor {context.actor.userId}.")
-    return {
-        "summary": f"Read system setting '{key}'.",
-        "data": {
-            "key": key,
-            "value": item.get("value"),
-            "description": item.get("description"),
-        },
-    }
+    The import is deferred to avoid a top-level cycle:
+    `modules/platform_admin/tools.py` imports `MCPToolDefinition` from
+    this module.
+    """
 
+    from ragent_python.modules import bootstrap_default_modules
 
-def _get_ingestion_task(args: dict[str, Any], context: MCPExecutionContextModel) -> dict[str, Any]:
-    task_id = str(args.get("taskId", "")).strip()
-    if not task_id:
-        raise ValueError("`taskId` is required.")
-
-    task = get_ingestion_task(task_id)
-    if task is None:
-        raise ValueError(f"Ingestion task '{task_id}' not found.")
-    if context.actor.tenantId is not None and task.tenantId != context.actor.tenantId:
-        raise ValueError(f"Ingestion task '{task_id}' not found.")
-    if context.actor.orgId is not None and task.orgId != context.actor.orgId:
-        raise ValueError(f"Ingestion task '{task_id}' not found.")
-
-    return {
-        "summary": f"Ingestion task '{task_id}' is currently {task.status}.",
-        "data": {
-            "taskId": task.taskId,
-            "status": task.status,
-            "currentStage": task.currentStage,
-            "traceId": task.traceId,
-            "knowledgeBaseId": task.knowledgeBaseId,
-            "documentId": task.documentId,
-        },
-    }
-
-
-TOOLS: tuple[MCPToolDefinition, ...] = (
-    MCPToolDefinition(
-        name="list_knowledge_bases",
-        description="List available knowledge bases.",
-        keywords=("knowledge base", "knowledge bases", "kb list", "kb"),
-        requires_admin=False,
-        execute=_list_knowledge_bases,
-    ),
-    MCPToolDefinition(
-        name="get_system_setting",
-        description="Read one system setting by key.",
-        keywords=("setting", "settings", "system setting"),
-        requires_admin=True,
-        execute=_get_system_setting,
-    ),
-    MCPToolDefinition(
-        name="get_ingestion_task",
-        description="Read one ingestion task by task id.",
-        keywords=("ingestion task", "task status", "ingestion status"),
-        requires_admin=True,
-        execute=_get_ingestion_task,
-    ),
-)
+    bootstrap_default_modules()
 
 
 def list_mcp_tools() -> list[MCPToolDefinition]:
-    return list(TOOLS)
+    _ensure_default_modules_bootstrapped()
+    from ragent_python.infra.registries.tool_pack import default_tool_pack_registry
+
+    return default_tool_pack_registry.list_tools()
 
 
 def get_mcp_tool(name: str) -> MCPToolDefinition | None:
-    for tool in TOOLS:
-        if tool.name == name:
-            return tool
-    return None
+    _ensure_default_modules_bootstrapped()
+    from ragent_python.infra.registries.tool_pack import default_tool_pack_registry
+
+    return default_tool_pack_registry.get_tool(name)
