@@ -1,6 +1,13 @@
 # Python Migration Workspace
 
-This directory is the target workspace for the Python refactor of Ragent.
+This directory is the target workspace for the Python refactor of Ragent and now acts as the new project skeleton.
+
+It currently contains:
+
+- `src/ragent_python/` for the Python runtime and execution plane
+- `web/` for the imported Next.js frontend, BFF, and control-plane shell
+
+The outer repository still keeps the legacy `web/` and `go/` trees for reference, but ongoing work for the new project should move toward this `python/` workspace.
 
 Initial documents:
 

@@ -23,3 +23,9 @@ __pycache__/
 .venv/
 venv/
 .deps/
+
+# Next.js frontend artifacts
+web/node_modules/
+web/.next/
+web/tmp/
+web/tsconfig.tsbuildinfo
