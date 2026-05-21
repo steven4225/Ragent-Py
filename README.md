@@ -1,32 +1,124 @@
-# Python Migration Workspace
+# Ragent-Py
 
-This directory is the target workspace for the Python refactor of Ragent and now acts as the new project skeleton.
+`Ragent-Py` is a full-stack Agent platform skeleton built with:
 
-It currently contains:
+- `Next.js + React + TypeScript` for the UI, BFF, and control plane
+- `Python + FastAPI` for the AI execution plane
 
-- `src/ragent_python/` for the Python runtime and execution plane
-- `web/` for the imported Next.js frontend, BFF, and control-plane shell
+The project is designed around a split architecture:
 
-The outer repository still keeps the legacy `web/` and `go/` trees for reference, but ongoing work for the new project should move toward this `python/` workspace.
+- the `web/` app owns the user-facing product shell, auth-facing API routes, admin views, and trace read models
+- the Python runtime owns chat execution, retrieval, ingestion, worker flows, reranking, and tool runtime behavior
 
-Initial documents:
+This repository is meant to be a **real project base**, not a toy RAG demo. It already includes retrieval, ingestion, workers, MCP-style tool execution, streaming chat, and end-to-end verification entry points.
 
-- `MIGRATION_PLAN.md`
-- `MIGRATION_CONSTRAINTS.md`
+## What It Already Supports
 
-The implementation should follow these documents unless later decisions explicitly supersede them.
+- streaming chat over `/api/chat/stream`
+- non-stream chat over `/api/chat`
+- ingestion task creation, tracking, and worker execution
+- Qdrant-backed dense retrieval
+- BM25 keyword retrieval
+- hybrid fusion and reranking
+- MCP/tool runtime integration
+- trace stage persistence through the BFF
+- admin ingestion flows
+- verify/e2e scripts for major runtime paths
 
-## Local Run
+## Architecture
 
-After installing dependencies from `pyproject.toml`, run the app with:
+### `web/`
+
+The Next.js app is the active frontend and control plane.
+
+Responsibilities:
+
+- chat UI
+- admin UI
+- BFF routes under `/api/*`
+- auth / scope enforcement
+- trace read models
+- browser-facing contracts and stream handling
+
+### `src/ragent_python/`
+
+The Python runtime is the active execution plane.
+
+Responsibilities:
+
+- chat turn execution
+- chat stream event generation
+- retrieval orchestration
+- ingestion task lifecycle
+- worker runtime
+- reranker integration
+- MCP/tool execution
+
+## Repository Layout
+
+```text
+python/
+  web/                    # Next.js frontend, BFF, admin shell
+  src/ragent_python/      # Python runtime
+  tests/                  # Python tests
+  scripts/                # Python verification helpers
+  pyproject.toml          # Python package config
+```
+
+## Quick Start
+
+### 1. Python backend
+
+Install Python dependencies:
+
+```bash
+pip install -e .[dev]
+```
+
+Run the backend:
 
 ```bash
 uvicorn ragent_python.main:app --host 0.0.0.0 --port 8000
 ```
 
-If using the `src/` layout directly, ensure `PYTHONPATH=src`.
+If needed, set:
 
-## Current Phase-1 Endpoints
+```bash
+PYTHONPATH=src
+```
+
+### 2. Frontend / BFF
+
+Install frontend dependencies:
+
+```bash
+cd web
+npm install
+```
+
+Run the web app:
+
+```bash
+npm run dev
+```
+
+### 3. Basic local wiring
+
+Typical local development uses:
+
+```bash
+RAG_BACKEND=python
+PYTHON_API_BASE_URL=http://127.0.0.1:8000
+```
+
+With that setup:
+
+- `web/` handles the browser-facing routes
+- Python handles the execution behind them
+
+## Python Runtime Endpoints
+
+Current internal execution endpoints include:
 
 - `GET /healthz`
 - `POST /internal/chat/turn`
@@ -36,15 +128,16 @@ If using the `src/` layout directly, ensure `PYTHONPATH=src`.
 - `GET /internal/ingestion/tasks`
 - `POST /internal/ingestion/tasks`
 - `GET /internal/ingestion/tasks/{taskId}`
+- `POST /internal/ingestion/worker/run`
 
 ## Ingestion Worker
 
-The ingestion task store is configurable:
+The ingestion task store supports:
 
-- `PYTHON_INGESTION_BACKEND=sqlite` for cross-process task sharing
-- `PYTHON_INGESTION_BACKEND=memory` for isolated local/testing flows
+- `PYTHON_INGESTION_BACKEND=sqlite`
+- `PYTHON_INGESTION_BACKEND=memory`
 
-Run one worker cycle manually:
+Run one worker cycle:
 
 ```bash
 python -m ragent_python.worker_runner --once
@@ -62,16 +155,18 @@ Run a polling worker loop:
 python -m ragent_python.worker_runner
 ```
 
-## Retrieval Backends
+## Retrieval and Reranking
 
-Python retrieval now supports a provider chain with Qdrant-first lookup, BM25 keyword recall, fusion, and reranking when configured.
+The runtime currently supports:
 
-- `PYTHON_RETRIEVAL_BACKEND=hybrid` keeps Qdrant as the preferred backend and preserves local fallbacks
-- `PYTHON_RETRIEVAL_BACKEND=qdrant` enables Qdrant-first retrieval
-- `PYTHON_RETRIEVAL_BACKEND=local` keeps only the local fallback providers
+- Qdrant dense retrieval
+- local BM25 keyword retrieval
+- reciprocal-rank fusion
+- external or heuristic reranking
 
-Relevant environment variables:
+Important environment variables:
 
+- `PYTHON_RETRIEVAL_BACKEND`
 - `PYTHON_QDRANT_URL`
 - `PYTHON_QDRANT_API_KEY`
 - `PYTHON_QDRANT_COLLECTION`
@@ -83,42 +178,54 @@ Relevant environment variables:
 - `PYTHON_RERANK_CANDIDATE_COUNT`
 - `PYTHON_RERANK_RETRIEVAL_WEIGHT`
 - `PYTHON_RERANK_MODEL_WEIGHT`
-- legacy `BGE_RERANKER_URL` is also accepted for parity with the existing Go service wiring
 
-Hybrid retrieval behavior:
+Legacy compatibility:
 
-- dense results come from Qdrant when `PYTHON_RETRIEVAL_BACKEND` is `hybrid` or `qdrant`
-- keyword results come from the local BM25 provider over the same local + ingested corpus
-- dense and keyword candidates are fused with reciprocal-rank fusion
-- reranking defaults to `auto`: if `PYTHON_BGE_RERANKER_URL` or legacy `BGE_RERANKER_URL` is set, Python uses the external BGE reranker; otherwise it falls back to the local heuristic model
-- the current self-hosted Docker image exposes `http://127.0.0.1:8091/v1/rerank`, while legacy adapters may still point at `/rerank`
-- set `PYTHON_RERANKER_BACKEND=heuristic` to force local reranking, or `PYTHON_RERANKER_BACKEND=none` to disable reranking entirely
-- fallback retrieval still preserves the ingestion/local providers when no hybrid candidates are found
+- `BGE_RERANKER_URL` is also accepted
 
-When `executionPlan.indexing.storeType=qdrant`, the ingestion worker writes chunk payloads into Qdrant during the indexing stage.
+## Verification
 
-To replay the full ingestion -> worker -> Qdrant -> `/api/chat` validation against running local services:
+### Python
+
+Run tests:
+
+```bash
+pytest
+```
+
+Run bytecode compile verification:
+
+```bash
+python -m compileall src scripts
+```
+
+### Python verification scripts
+
+Verify ingestion -> worker -> Qdrant -> `/api/chat`:
 
 ```bash
 python scripts/verify_qdrant_e2e.py
 ```
 
-To verify `/api/chat/stream` preserves retrieval metadata and tool-call metadata through the BFF:
+Verify `/api/chat/stream` metadata:
 
 ```bash
 python scripts/verify_chat_stream_metadata_e2e.py
 ```
 
-To verify both `/api/chat` and `/api/chat/stream` write retrieval/tool/generation stages into `/api/trace` through the BFF:
+Verify trace stage persistence through the BFF:
 
 ```bash
 python scripts/verify_chat_trace_e2e.py
 ```
 
-Optional environment overrides:
+### Frontend / BFF verification
 
-- `RAGENT_WEB_BASE_URL`
-- `RAGENT_QDRANT_URL`
-- `RAGENT_QDRANT_COLLECTION`
-- `RAGENT_TENANT_ID`
-- `RAGENT_ORG_ID`
+Inside `web/`:
+
+```bash
+npm run typecheck
+npm run verify:rag-e2e
+npm run verify:mcp-runtime-e2e
+npm run verify:auth-scope-e2e
+```
