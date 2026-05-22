@@ -62,6 +62,9 @@ from ragent_python.modules.ecommerce.chat import (
     EcommerceChatRetrievalEvent,
     run_ecommerce_chat_stream,
 )
+from ragent_python.modules.ecommerce.intent import (
+    ECOMMERCE_INTENT_PRODUCT_CONSULT,
+)
 
 
 def _make_trace_id() -> str:
@@ -81,8 +84,18 @@ async def iter_ecommerce_router_stream_events(
     *,
     adapter: GenerationAdapter,
     retrieval_limit: int = 5,
+    intent: str = ECOMMERCE_INTENT_PRODUCT_CONSULT,
 ) -> AsyncIterator[str]:
     """Run the ecommerce chat stream and emit main-protocol NDJSON lines.
+
+    `intent` is the name of the `IntentPattern` that the upstream
+    router resolved for this request (e.g.
+    ``ecommerce.product_compare`` for "compare X vs Y"). It is
+    recorded both in `assistantMessage.metadata.router.intent` for
+    downstream trace/analytics consumers and in
+    `ChatCompletedEvent.plan.retrievalReason` so the existing trace
+    pipeline surfaces the actual routing reason rather than a
+    placeholder.
 
     The output is byte-identical in shape to
     `iter_chat_stream_events()`'s output, so any consumer (BFF route,
@@ -195,7 +208,7 @@ async def iter_ecommerce_router_stream_events(
         content="".join(answer_buffer),
         metadata={
             "router": {
-                "intent": "ecommerce.product_consult",
+                "intent": intent,
                 "module": "ecommerce",
             },
             "generation": {
@@ -226,7 +239,7 @@ async def iter_ecommerce_router_stream_events(
             plan=ChatPlanModel(
                 useRetrieval=True,
                 useTools=False,
-                retrievalReason="ecommerce.product_consult (router)",
+                retrievalReason=f"{intent} (router)",
             ),
             traceStages=[],
         )

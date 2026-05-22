@@ -269,6 +269,68 @@ class EcommerceStreamBridgeTests(unittest.TestCase):
         self.assertIn("retrieval", assistant["metadata"])
         self.assertIn("generation", assistant["metadata"])
 
+    def test_intent_is_recorded_on_metadata_and_plan(self) -> None:
+        """The routed intent must flow through to both
+        `assistantMessage.metadata.router.intent` and
+        `ChatCompletedEvent.plan.retrievalReason`, so downstream
+        trace/analytics consumers can attribute the run to the actual
+        intent (consult / compare / buy) rather than a hardcoded
+        placeholder."""
+
+        async def _collect_for_intent(intent: str) -> list[dict]:
+            request = InternalChatRequestModel(
+                message="ignored — intent is passed explicitly",
+                conversationId=f"conv_test_bridge_intent_{intent}",
+                userId="user_test",
+                tenantId="tenant_test",
+                orgId=None,
+                role="user",
+            )
+            events: list[dict] = []
+            async for line in iter_ecommerce_router_stream_events(
+                request, adapter=StubAdapter(), intent=intent
+            ):
+                events.append(json.loads(line))
+            return events
+
+        for intent in (
+            "ecommerce.product_consult",
+            "ecommerce.product_compare",
+            "ecommerce.product_buy",
+        ):
+            with self.subTest(intent=intent):
+                events = _run_async(_collect_for_intent(intent))
+                completed = next(event for event in events if event["type"] == "message.completed")
+                self.assertEqual(
+                    completed["assistantMessage"]["metadata"]["router"]["intent"],
+                    intent,
+                )
+                chat_completed = next(event for event in events if event["type"] == "chat.completed")
+                self.assertEqual(
+                    chat_completed["plan"]["retrievalReason"],
+                    f"{intent} (router)",
+                )
+
+    def test_default_intent_argument_falls_back_to_consult(self) -> None:
+        """Backwards-compatible default: callers that do not pass an
+        explicit intent still get a meaningful (consult) label."""
+
+        request = InternalChatRequestModel(
+            message="recommend a laptop",
+            conversationId="conv_test_bridge_default_intent",
+            userId="user_test",
+            tenantId="tenant_test",
+            orgId=None,
+            role="user",
+        )
+        adapter = StubAdapter()
+        events = self._collect(request, adapter)
+        completed = next(event for event in events if event["type"] == "message.completed")
+        self.assertEqual(
+            completed["assistantMessage"]["metadata"]["router"]["intent"],
+            "ecommerce.product_consult",
+        )
+
     def test_message_delta_text_concatenates_into_final_content(self) -> None:
         request = InternalChatRequestModel(
             message="recommend a laptop",
@@ -442,6 +504,70 @@ class InternalChatRouterEndpointTests(unittest.TestCase):
         completed = next(event for event in events if event["type"] == "message.completed")
         self.assertIn("blocks", completed["assistantMessage"]["metadata"])
         self.assertIn("retrieval", completed["assistantMessage"]["metadata"])
+        # Real classifier should have picked the consult intent.
+        self.assertEqual(
+            completed["assistantMessage"]["metadata"]["router"]["intent"],
+            "ecommerce.product_consult",
+        )
+
+    def test_stream_endpoint_threads_compare_intent_into_metadata(self) -> None:
+        """A 'compare X vs Y' query must end up with the compare
+        intent recorded in `metadata.router.intent` and in
+        `chat.completed.plan.retrievalReason` — *not* the consult
+        placeholder."""
+
+        response = self.client.post(
+            "/internal/chat/router/stream",
+            json={
+                "message": "compare iphone 15 vs pixel 9",
+                "conversationId": "conv_e2e_ecom_compare",
+                "userId": "user_e2e",
+                "tenantId": "tenant_e2e",
+                "mode": "ecommerce",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        lines = [line for line in response.text.split("\n") if line.strip()]
+        events = [json.loads(line) for line in lines]
+        completed = next(event for event in events if event["type"] == "message.completed")
+        chat_completed = next(event for event in events if event["type"] == "chat.completed")
+        self.assertEqual(
+            completed["assistantMessage"]["metadata"]["router"]["intent"],
+            "ecommerce.product_compare",
+        )
+        self.assertEqual(
+            chat_completed["plan"]["retrievalReason"],
+            "ecommerce.product_compare (router)",
+        )
+
+    def test_stream_endpoint_threads_buy_intent_into_metadata(self) -> None:
+        """A 'buy …' query must produce the buy intent (highest
+        weight) and surface it on both the metadata and plan
+        envelopes."""
+
+        response = self.client.post(
+            "/internal/chat/router/stream",
+            json={
+                "message": "I want to buy a tablet for my mom",
+                "conversationId": "conv_e2e_ecom_buy",
+                "userId": "user_e2e",
+                "tenantId": "tenant_e2e",
+                "mode": "ecommerce",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        lines = [line for line in response.text.split("\n") if line.strip()]
+        events = [json.loads(line) for line in lines]
+        completed = next(event for event in events if event["type"] == "message.completed")
+        chat_completed = next(event for event in events if event["type"] == "chat.completed")
+        self.assertEqual(
+            completed["assistantMessage"]["metadata"]["router"]["intent"],
+            "ecommerce.product_buy",
+        )
+        self.assertEqual(
+            chat_completed["plan"]["retrievalReason"],
+            "ecommerce.product_buy (router)",
+        )
 
     def test_stream_endpoint_ecommerce_mode_no_match_falls_back_to_chat_service(self) -> None:
         """Ecommerce mode + non-ecommerce query → falls back to

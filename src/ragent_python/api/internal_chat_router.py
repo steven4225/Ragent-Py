@@ -117,10 +117,10 @@ async def _iter_router_ndjson(
         decision = intent_router.classify_for_module(
             request.message, module="ecommerce"
         )
-        if decision.is_match:
+        if decision.is_match and decision.intent is not None:
             adapter = resolve_generation_adapter()
             async for line in iter_ecommerce_router_stream_events(
-                request, adapter=adapter
+                request, adapter=adapter, intent=decision.intent
             ):
                 yield line
             return
