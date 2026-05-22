@@ -303,14 +303,15 @@ export default function EcommercePreviewPage() {
           Module preview
         </p>
         <h1 className="text-2xl font-semibold text-slate-950">
-          Ecommerce module · ProductCardBlock
+          Ecommerce module · preview
         </h1>
         <p className="max-w-3xl text-sm leading-6 text-slate-600">
-          Type-safe `product_card` blocks emitted by the Python-side
-          ecommerce module against a static 3C fixture. The blocks land
-          here without touching the chat pipeline — chat integration is
-          deferred to the next push, after the generation adapter is
-          wired with a real LLM provider.
+          End-to-end preview of the Python-side ecommerce module against
+          a static 3C fixture: `product_card` search, `spec_compare`
+          tables, and a module-scoped chat lane that pipes retrieval +
+          a real `GenerationAdapter` through a one-shot or NDJSON
+          streaming endpoint. Bypasses `services/chat_service` and the
+          main `/api/chat` pipeline by design.
         </p>
       </header>
 

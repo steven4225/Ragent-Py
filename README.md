@@ -115,6 +115,65 @@ The spec's selector activates when the request has no
 hybrid path (`build_default_retrieval_provider` → BM25 + ingestion +
 local-static fallback) still works with zero call-site changes.
 
+### `modules/ecommerce/`
+
+First end-to-end business module: a 12-SKU 3C catalog (laptops, phones,
+tablets, earbuds, monitors) with structured filters, two renderer
+blocks, and a module-scoped chat lane. Contributes to three
+sub-registries through `register()`:
+
+| sub-registry              | contribution                                              |
+| ------------------------- | --------------------------------------------------------- |
+| `RetrievalSourceRegistry` | `ProductCatalogRetrievalProvider` (keyword + filter scorer) |
+| `RendererBlockRegistry`   | `ProductCardBlock`, `SpecCompareBlock`                    |
+| `IntentPatternRegistry`   | (not yet — reserved for future router work)               |
+
+A dedicated preview surface lives at `web/app/preview/ecommerce/` and
+uses four BFF-fronted endpoints that bypass `services/chat_service`
+and the main `/api/chat` pipeline by design:
+
+| python endpoint                          | what it does                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------- |
+| `POST /internal/ecommerce/search`        | catalog filter + `ProductCardBlock[]`                                     |
+| `POST /internal/ecommerce/compare`       | `SpecCompareBlock` side-by-side table for 2–4 selected product ids        |
+| `POST /internal/ecommerce/chat`          | retrieval → `GenerationAdapter.generate()` → one-shot `{answer, blocks}`  |
+| `POST /internal/ecommerce/chat/stream`   | retrieval → `GenerationAdapter.stream()` → NDJSON `retrieval/delta/done`  |
+
+The streaming wire format is one JSON object per newline. The first
+event carries the retrieved product ids + their `ProductCardBlock`s so
+the UI can paint the grid before the model starts emitting tokens:
+
+```ndjson
+{"type":"retrieval","query":"...","retrieved_product_ids":[...],"blocks":[{"type":"product_card",...}, ...]}
+{"type":"delta","text":"The best fit is"}
+{"type":"delta","text":" the Lenovo Legion Slim 5"}
+{"type":"delta","text":" ..."}
+{"type":"done","provider":"openai_compatible","model":"qwen-plus","finish_reason":"stop","input_tokens":null,"output_tokens":null}
+```
+
+#### Preview screenshots
+
+`Search` runs `/internal/ecommerce/search`. Empty query lists every
+fixture row; `Category` + `Price band` apply structured filters on the
+Python side.
+
+![Ecommerce preview · search and filters](docs/img/preview/02-search-filters.png)
+
+`Compare` ticks 2–4 cards then calls `/internal/ecommerce/compare`,
+which resolves the product ids on the Python side and returns a
+`SpecCompareBlock` with a stable row order (Price / Display / Chip /
+Memory / Storage / Battery / Weight / Released).
+
+![Ecommerce preview · spec compare table](docs/img/preview/03-spec-compare.png)
+
+`Ask (stream)` calls `/internal/ecommerce/chat/stream`. The retrieved
+product cards land first (off the leading retrieval event), then the
+LLM answer streams in delta-by-delta, then provider / model /
+finish_reason badges freeze on the final done event. The shot below
+is the OpenAI-compatible adapter pointed at DashScope `qwen-plus`:
+
+![Ecommerce preview · streaming chat answer + retrieved cards](docs/img/preview/04-chat-stream.png)
+
 ## What the runtime already supports
 
 - streaming chat over `/api/chat/stream`
@@ -184,6 +243,8 @@ the execution behind them.
 
 ## Python Runtime Endpoints
 
+Core runtime (main pipeline):
+
 - `GET /healthz` — also reports the current `generation_provider`
 - `POST /internal/chat/turn`
 - `POST /internal/chat/stream`
@@ -193,6 +254,14 @@ the execution behind them.
 - `POST /internal/ingestion/tasks`
 - `GET /internal/ingestion/tasks/{taskId}`
 - `POST /internal/ingestion/worker/run`
+
+Module preview lanes (bypass `services/chat_service` by design — used
+by `web/app/preview/*` only):
+
+- `POST /internal/ecommerce/search`
+- `POST /internal/ecommerce/compare`
+- `POST /internal/ecommerce/chat`
+- `POST /internal/ecommerce/chat/stream` (NDJSON `retrieval` / `delta` / `done` events)
 
 ## Ingestion Worker
 
@@ -262,11 +331,55 @@ Provider resolution is chained — `PYTHON_LLM_FALLBACK_CHAIN` defaults to
 SDKs directly; the resolver wires the first reachable provider behind
 the adapter.
 
+### OpenAI-compatible adapter
+
+`OpenAICompatibleGenerationAdapter` is the single adapter implementation
+used for every OpenAI-compatible provider (OpenAI proper, DashScope,
+Moonshot, DeepSeek, SiliconFlow, self-hosted vLLM / SGLang, …). The
+adapter does not know the provider's name — it is selected entirely
+through environment variables:
+
+| variable                   | purpose                                                  |
+| -------------------------- | -------------------------------------------------------- |
+| `OPENAI_API_KEY`           | required for any hosted provider (omit for self-hosted)  |
+| `OPENAI_BASE_URL`          | provider-specific endpoint base URL                       |
+| `PYTHON_LLM_MODEL`         | model name to send on every request                       |
+| `PYTHON_LLM_FALLBACK_CHAIN`| resolver chain (`openai` activates the adapter)           |
+
+Example matrices:
+
+| provider          | `OPENAI_BASE_URL`                                          | `PYTHON_LLM_MODEL`      |
+| ----------------- | ---------------------------------------------------------- | ----------------------- |
+| OpenAI proper     | (unset — SDK default)                                      | `gpt-4o-mini`           |
+| DashScope (Qwen)  | `https://dashscope.aliyuncs.com/compatible-mode/v1`        | `qwen-plus`             |
+| Self-hosted vLLM  | `http://vllm-host:8000/v1`                                 | `Qwen/Qwen2.5-7B-Instruct` |
+
+Adapter behavior is identical across providers:
+
+- `generate()` returns a one-shot `GenerationResult` with mapped finish
+  reason (`length`, `tool_calls` → `tool_call`, `content_filter`).
+- `stream()` opens the provider's native streaming endpoint
+  (`stream=True`) and yields `GenerationChunk(delta=..., finish_reason=None)`
+  per token batch, followed by a final empty chunk with the mapped finish
+  reason. `APITimeoutError` / `APIError` collapse to a single chunk
+  with `finish_reason="error"` so the module-side orchestrator can still
+  close a streaming response cleanly. `MockGenerationAdapter` mimics the
+  same shape (word-by-word deltas) so the preview UI keeps streaming
+  visibly even with no API key configured.
+
+`.env.example` lists ready-to-paste config blocks for several common
+providers.
+
 ## Continuous Integration
 
-`.github/workflows/pytest.yml` runs `pytest tests/ -q` on every push to
-`main` and every pull request targeting `main`. Lint, typecheck, and
-matrix builds are intentionally out of scope for now.
+Two workflows gate `main`:
+
+- `.github/workflows/pytest.yml` — `pytest tests/ -q` on every push to
+  `main` and every PR targeting `main`.
+- `.github/workflows/web-build.yml` — `npm ci` + `npm run typecheck` +
+  `npm run build` against `web/` on the same triggers.
+
+Lint and matrix builds are intentionally out of scope for now.
 
 ## Verification
 
