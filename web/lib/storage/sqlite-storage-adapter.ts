@@ -1,8 +1,26 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+
+import type { DatabaseSync } from "node:sqlite";
 
 import type { StorageAdapter } from "@/lib/storage/storage-adapter";
+
+// `node:sqlite` is an experimental Node 22+ builtin that is only available
+// when the runtime is started with `--experimental-sqlite`. Importing it
+// statically forces Next.js' build-time page-data collector to evaluate
+// the module even on routes that never opt into the sqlite backend (the
+// default `TS_PLATFORM_STATE_BACKEND` is "json"), which fails the build.
+// Defer the load to construction time via `createRequire`; bundlers treat
+// these calls as opaque and skip resolution at build time.
+const nodeRequire = createRequire(import.meta.url);
+
+type NodeSqliteModule = typeof import("node:sqlite");
+
+function loadDatabaseSync(): NodeSqliteModule["DatabaseSync"] {
+  const mod = nodeRequire("node:sqlite") as NodeSqliteModule;
+  return mod.DatabaseSync;
+}
 
 type SqliteStorageAdapterOptions<TState> = {
   filePath: string;
@@ -28,7 +46,8 @@ export class SqliteStorageAdapter<TState> implements StorageAdapter<TState> {
     this.tableName = options.tableName ?? "platform_state";
     this.key = options.key ?? "default";
     this.ensureDir();
-    this.db = new DatabaseSync(this.filePath);
+    const DatabaseSyncCtor = loadDatabaseSync();
+    this.db = new DatabaseSyncCtor(this.filePath);
     this.ensureSchema();
   }
 
