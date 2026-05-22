@@ -3,11 +3,15 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { ProductCard } from "@/components/blocks/product-card";
+import { SpecCompareTable } from "@/components/blocks/spec-compare-table";
 import {
   ECOMMERCE_PRODUCT_CATEGORIES,
+  SPEC_COMPARE_MAX_PRODUCTS,
+  type EcommerceCompareResponse,
   type EcommerceProductCategory,
   type EcommerceSearchResponse,
   type ProductCardBlock,
+  type SpecCompareBlock,
 } from "@/lib/contracts/ecommerce-blocks";
 
 /**
@@ -72,6 +76,19 @@ async function fetchPreview(payload: {
   return (await response.json()) as EcommerceSearchResponse;
 }
 
+async function fetchCompare(productIds: string[]): Promise<EcommerceCompareResponse> {
+  const response = await fetch("/api/preview/ecommerce/compare", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ product_ids: productIds }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Compare request failed (${response.status}): ${text}`);
+  }
+  return (await response.json()) as EcommerceCompareResponse;
+}
+
 export default function EcommercePreviewPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | EcommerceProductCategory>("all");
@@ -79,6 +96,49 @@ export default function EcommercePreviewPage() {
   const [state, setState] = useState<PreviewState>(INITIAL_STATE);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [compareBlock, setCompareBlock] = useState<SpecCompareBlock | null>(null);
+  const [compareNotice, setCompareNotice] = useState<string | null>(null);
+  const [isComparing, startCompare] = useTransition();
+
+  function toggleSelect(productId: string) {
+    setSelectedIds((current) => {
+      if (current.includes(productId)) {
+        return current.filter((id) => id !== productId);
+      }
+      if (current.length >= SPEC_COMPARE_MAX_PRODUCTS) {
+        return current;
+      }
+      return [...current, productId];
+    });
+  }
+
+  function runCompare() {
+    if (selectedIds.length < 2) {
+      return;
+    }
+    setError(null);
+    setCompareNotice(null);
+    startCompare(async () => {
+      try {
+        const result = await fetchCompare(selectedIds);
+        setCompareBlock(result.block);
+        if (result.missing_ids.length > 0) {
+          setCompareNotice(
+            `Skipped unknown product ids: ${result.missing_ids.join(", ")}`,
+          );
+        }
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Unknown error.");
+      }
+    });
+  }
+
+  function clearCompare() {
+    setSelectedIds([]);
+    setCompareBlock(null);
+    setCompareNotice(null);
+  }
 
   const activePriceBand = useMemo(
     () => PRICE_BANDS.find((band) => band.label === priceBandLabel) ?? PRICE_BANDS[0],
@@ -209,10 +269,79 @@ export default function EcommercePreviewPage() {
         </p>
       </section>
 
+      <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col">
+            <p className="text-sm font-semibold text-slate-950">
+              Spec compare · SpecCompareBlock
+            </p>
+            <p className="text-xs text-slate-500">
+              Tick 2–{SPEC_COMPARE_MAX_PRODUCTS} cards below, then compare
+              their specs side-by-side. Same Python module, second block
+              type. Selected: {selectedIds.length}/{SPEC_COMPARE_MAX_PRODUCTS}.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={clearCompare}
+              disabled={selectedIds.length === 0 && !compareBlock}
+              className="inline-flex h-[34px] items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={runCompare}
+              disabled={selectedIds.length < 2 || isComparing}
+              className="inline-flex h-[34px] items-center justify-center rounded-lg bg-indigo-600 px-3 text-xs font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isComparing
+                ? "Comparing..."
+                : `Compare (${selectedIds.length})`}
+            </button>
+          </div>
+        </div>
+        {compareNotice && (
+          <p className="text-xs text-amber-700">{compareNotice}</p>
+        )}
+        {compareBlock && <SpecCompareTable block={compareBlock} />}
+      </section>
+
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {state.blocks.map((block) => (
-          <ProductCard key={block.product_id} block={block} />
-        ))}
+        {state.blocks.map((block) => {
+          const isSelected = selectedIds.includes(block.product_id);
+          const reachedCap =
+            !isSelected && selectedIds.length >= SPEC_COMPARE_MAX_PRODUCTS;
+          return (
+            <div
+              key={block.product_id}
+              className={`relative rounded-2xl transition ${
+                isSelected
+                  ? "ring-2 ring-indigo-500 ring-offset-2 ring-offset-slate-100"
+                  : ""
+              }`}
+            >
+              <label
+                className={`absolute right-3 top-3 z-10 flex select-none items-center gap-1 rounded-full border bg-white/95 px-2 py-1 text-[11px] font-medium shadow-sm backdrop-blur ${
+                  reachedCap
+                    ? "cursor-not-allowed border-slate-200 text-slate-400"
+                    : "cursor-pointer border-slate-300 text-slate-700"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  disabled={reachedCap}
+                  onChange={() => toggleSelect(block.product_id)}
+                  className="h-3.5 w-3.5 rounded border-slate-400 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed"
+                />
+                Compare
+              </label>
+              <ProductCard block={block} />
+            </div>
+          );
+        })}
       </section>
 
       {state.blocks.length === 0 && !isPending && !error && (

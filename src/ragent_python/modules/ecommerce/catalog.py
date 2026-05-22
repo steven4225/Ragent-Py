@@ -147,6 +147,19 @@ def _passes_filters(product: Product, filters: ProductCatalogFilters) -> bool:
     return True
 
 
+def get_products_by_ids(product_ids: list[str]) -> list[Product]:
+    """Return products in the order of `product_ids`, skipping unknown ids.
+
+    Used by `/internal/ecommerce/compare`: the preview UI sends a small,
+    user-selected list and expects column order preserved.
+    """
+
+    if not product_ids:
+        return []
+    catalog_by_id = {product.product_id: product for product in load_products()}
+    return [catalog_by_id[pid] for pid in product_ids if pid in catalog_by_id]
+
+
 def search_products(
     query: str,
     filters: ProductCatalogFilters | None = None,

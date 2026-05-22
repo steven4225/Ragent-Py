@@ -1,12 +1,11 @@
-"""Internal preview endpoint for the ecommerce module.
+"""Internal preview endpoints for the ecommerce module.
 
-Step D scope: `chat_service` is intentionally untouched, so the
-`ProductCardBlock` reaches the frontend through this dedicated route
-instead of the chat stream. The endpoint reads
-`modules.ecommerce.catalog.search_products` directly and converts each
-hit into a `ProductCardBlock`, then returns the list as
-`AssistantMessageBlocks`-shaped payload. No LLM, no retrieval fusion,
-no auth gate — it is a deterministic preview lane for the TS preview
+Step D / D.1 scope: `chat_service` is intentionally untouched, so the
+`ProductCardBlock` and `SpecCompareBlock` reach the frontend through
+these dedicated preview routes instead of the chat stream. The two
+endpoints read `modules.ecommerce.catalog` directly and convert hits
+into the matching renderer block payloads. No LLM, no retrieval
+fusion, no auth gate — deterministic preview lanes for the TS preview
 page and for tests.
 """
 
@@ -18,11 +17,15 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from ragent_python.modules.ecommerce.blocks import (
+    SPEC_COMPARE_MAX_PRODUCTS,
     ProductCardBlock,
+    SpecCompareBlock,
+    build_spec_compare_block,
     product_to_card_block,
 )
 from ragent_python.modules.ecommerce.catalog import (
     ProductCatalogFilters,
+    get_products_by_ids,
     search_products,
 )
 
@@ -77,4 +80,36 @@ async def internal_ecommerce_search(
         query=request.query,
         total=len(blocks),
         blocks=blocks,
+    )
+
+
+class EcommerceCompareRequest(BaseModel):
+    product_ids: list[str] = Field(default_factory=list)
+
+
+class EcommerceCompareResponse(BaseModel):
+    source: Literal["ecommerce-compare-preview"] = "ecommerce-compare-preview"
+    requested_ids: list[str]
+    resolved_ids: list[str]
+    missing_ids: list[str]
+    truncated: bool
+    block: SpecCompareBlock
+
+
+@router.post("/compare", response_model=EcommerceCompareResponse)
+async def internal_ecommerce_compare(
+    request: EcommerceCompareRequest,
+) -> EcommerceCompareResponse:
+    requested = list(request.product_ids)
+    resolved_products = get_products_by_ids(requested)
+    resolved_id_set = {product.product_id for product in resolved_products}
+    missing = [pid for pid in requested if pid not in resolved_id_set]
+    truncated = len(resolved_products) > SPEC_COMPARE_MAX_PRODUCTS
+    block = build_spec_compare_block(resolved_products)
+    return EcommerceCompareResponse(
+        requested_ids=requested,
+        resolved_ids=[column.product_id for column in block.columns],
+        missing_ids=missing,
+        truncated=truncated,
+        block=block,
     )

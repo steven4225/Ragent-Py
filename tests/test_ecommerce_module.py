@@ -27,6 +27,11 @@ from ragent_python.modules.ecommerce import (
     ProductCardBlock,
     ProductCatalogFilters,
     ProductCatalogRetrievalProvider,
+    SPEC_COMPARE_MAX_PRODUCTS,
+    SPEC_COMPARE_PLACEHOLDER,
+    SpecCompareBlock,
+    build_spec_compare_block,
+    get_products_by_ids,
     load_products,
     product_to_card_block,
     search_products,
@@ -62,8 +67,9 @@ class EcommerceModuleProtocolTests(unittest.TestCase):
         self.assertEqual(spec.name, ECOMMERCE_SOURCE_NAME)
         self.assertEqual(spec.module, "ecommerce")
         self.assertEqual(spec.build_provider, ProductCatalogRetrievalProvider)
-        self.assertEqual(len(result.renderer_blocks), 1)
-        self.assertIs(result.renderer_blocks[0], ProductCardBlock)
+        self.assertEqual(len(result.renderer_blocks), 2)
+        self.assertIn(ProductCardBlock, result.renderer_blocks)
+        self.assertIn(SpecCompareBlock, result.renderer_blocks)
         self.assertIsNone(result.tool_pack)
         self.assertEqual(result.ingestion_adapters, ())
         self.assertEqual(result.intent_patterns, ())
@@ -215,6 +221,7 @@ class EcommerceBootstrapTests(unittest.TestCase):
             cls.model_fields["type"].default for cls in block_classes
         }
         self.assertIn("product_card", type_literals)
+        self.assertIn("spec_compare", type_literals)
 
     def test_bootstrap_is_idempotent(self) -> None:
         registry = _build_isolated_registry()
@@ -306,6 +313,172 @@ class InternalEcommerceEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["total"], 5)
+
+
+class CatalogLookupByIdsTests(unittest.TestCase):
+    def test_returns_products_in_requested_order(self) -> None:
+        all_ids = [product.product_id for product in load_products()]
+        requested = [all_ids[2], all_ids[0], all_ids[5]]
+        found = get_products_by_ids(requested)
+        self.assertEqual([p.product_id for p in found], requested)
+
+    def test_skips_unknown_ids(self) -> None:
+        all_ids = [product.product_id for product in load_products()]
+        requested = [all_ids[0], "unknown-sku", all_ids[1]]
+        found = get_products_by_ids(requested)
+        self.assertEqual(
+            [p.product_id for p in found],
+            [all_ids[0], all_ids[1]],
+        )
+
+    def test_empty_input_returns_empty(self) -> None:
+        self.assertEqual(get_products_by_ids([]), [])
+
+
+class SpecCompareBlockTests(unittest.TestCase):
+    def _pick(self, *ids: str) -> list[Product]:
+        return get_products_by_ids(list(ids))
+
+    def test_block_type_literal_and_columns(self) -> None:
+        products = self._pick(
+            "laptop-macbook-pro-14-m3pro",
+            "laptop-dell-xps-15-2024",
+        )
+        block = build_spec_compare_block(products)
+        self.assertIsInstance(block, SpecCompareBlock)
+        self.assertEqual(block.type, "spec_compare")
+        self.assertEqual(len(block.columns), 2)
+        self.assertEqual(
+            [column.product_id for column in block.columns],
+            ["laptop-macbook-pro-14-m3pro", "laptop-dell-xps-15-2024"],
+        )
+
+    def test_row_order_is_stable_and_starts_with_price(self) -> None:
+        block = build_spec_compare_block(
+            self._pick(
+                "laptop-macbook-pro-14-m3pro",
+                "laptop-dell-xps-15-2024",
+            )
+        )
+        labels = [row.label for row in block.rows]
+        self.assertEqual(labels[0], "Price")
+        self.assertIn("Released", labels)
+        # Released should be last row when present
+        self.assertEqual(labels[-1], "Released")
+
+    def test_each_row_has_value_per_column(self) -> None:
+        products = self._pick(
+            "laptop-macbook-pro-14-m3pro",
+            "laptop-dell-xps-15-2024",
+            "phone-iphone-15-pro",
+        )
+        block = build_spec_compare_block(products)
+        for row in block.rows:
+            self.assertEqual(len(row.values), len(block.columns))
+
+    def test_placeholder_for_missing_field_when_others_have_it(self) -> None:
+        # A monitor has no chip/ram, while a laptop does. The Chip row
+        # should appear (laptop has it) and the monitor column should
+        # carry the placeholder.
+        products = self._pick(
+            "laptop-macbook-pro-14-m3pro",
+            "monitor-dell-u2723qe",
+        )
+        block = build_spec_compare_block(products)
+        labels = [row.label for row in block.rows]
+        self.assertIn("Chip", labels)
+        chip_row = next(row for row in block.rows if row.label == "Chip")
+        # Monitor is the second column
+        self.assertEqual(chip_row.values[1], SPEC_COMPARE_PLACEHOLDER)
+
+    def test_row_dropped_when_no_product_has_value(self) -> None:
+        # Earbuds in the fixture carry no `screen` / `ram_gb` / `storage_gb`.
+        # Comparing two earbuds together should drop all three rows
+        # entirely (rather than emitting placeholder-only rows).
+        earbuds = [
+            product
+            for product in load_products()
+            if product.category == "earbuds"
+        ][:2]
+        self.assertEqual(len(earbuds), 2)
+        block = build_spec_compare_block(earbuds)
+        labels = [row.label for row in block.rows]
+        self.assertNotIn("Display", labels)
+        self.assertNotIn("Memory", labels)
+        self.assertNotIn("Storage", labels)
+
+    def test_truncates_to_max_products(self) -> None:
+        products = load_products()[: SPEC_COMPARE_MAX_PRODUCTS + 2]
+        block = build_spec_compare_block(products)
+        self.assertEqual(len(block.columns), SPEC_COMPARE_MAX_PRODUCTS)
+
+    def test_empty_input_produces_empty_block(self) -> None:
+        block = build_spec_compare_block([])
+        self.assertEqual(block.columns, [])
+        self.assertEqual(block.rows, [])
+
+
+class InternalEcommerceCompareEndpointTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = TestClient(create_app())
+
+    def test_compare_returns_spec_compare_block(self) -> None:
+        response = self.client.post(
+            "/internal/ecommerce/compare",
+            json={
+                "product_ids": [
+                    "laptop-macbook-pro-14-m3pro",
+                    "laptop-dell-xps-15-2024",
+                ]
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["source"], "ecommerce-compare-preview")
+        self.assertEqual(
+            body["requested_ids"],
+            ["laptop-macbook-pro-14-m3pro", "laptop-dell-xps-15-2024"],
+        )
+        self.assertEqual(
+            body["resolved_ids"],
+            ["laptop-macbook-pro-14-m3pro", "laptop-dell-xps-15-2024"],
+        )
+        self.assertEqual(body["missing_ids"], [])
+        self.assertFalse(body["truncated"])
+        block = body["block"]
+        self.assertEqual(block["type"], "spec_compare")
+        self.assertEqual(len(block["columns"]), 2)
+        self.assertTrue(
+            any(row["label"] == "Price" for row in block["rows"])
+        )
+
+    def test_compare_reports_missing_ids(self) -> None:
+        response = self.client.post(
+            "/internal/ecommerce/compare",
+            json={
+                "product_ids": [
+                    "laptop-macbook-pro-14-m3pro",
+                    "does-not-exist",
+                ]
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(
+            body["resolved_ids"], ["laptop-macbook-pro-14-m3pro"]
+        )
+        self.assertEqual(body["missing_ids"], ["does-not-exist"])
+
+    def test_compare_empty_returns_empty_block(self) -> None:
+        response = self.client.post(
+            "/internal/ecommerce/compare",
+            json={"product_ids": []},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["resolved_ids"], [])
+        self.assertEqual(body["block"]["columns"], [])
+        self.assertEqual(body["block"]["rows"], [])
 
 
 if __name__ == "__main__":

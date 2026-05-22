@@ -57,3 +57,39 @@ export const ECOMMERCE_PRODUCT_CATEGORIES = [
 ] as const;
 
 export type EcommerceProductCategory = (typeof ECOMMERCE_PRODUCT_CATEGORIES)[number];
+
+export interface SpecCompareColumn {
+  product_id: string;
+  name: string;
+  brand: string;
+  category: string;
+  image_url: string;
+}
+
+export interface SpecCompareRow {
+  label: string;
+  values: string[];
+  has_data: boolean;
+}
+
+export interface SpecCompareBlock {
+  type: "spec_compare";
+  columns: SpecCompareColumn[];
+  rows: SpecCompareRow[];
+  placeholder: string;
+}
+
+export interface EcommerceCompareRequest {
+  product_ids: string[];
+}
+
+export interface EcommerceCompareResponse {
+  source: "ecommerce-compare-preview";
+  requested_ids: string[];
+  resolved_ids: string[];
+  missing_ids: string[];
+  truncated: boolean;
+  block: SpecCompareBlock;
+}
+
+export const SPEC_COMPARE_MAX_PRODUCTS = 4;

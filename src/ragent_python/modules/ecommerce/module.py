@@ -19,7 +19,7 @@ from __future__ import annotations
 from ragent_python.contracts.internal_api import InternalRetrievalRequestModel
 from ragent_python.core.modules.contract import ModuleHookResult
 from ragent_python.infra.registries.retrieval_source import RetrievalSourceSpec
-from ragent_python.modules.ecommerce.blocks import ProductCardBlock
+from ragent_python.modules.ecommerce.blocks import ProductCardBlock, SpecCompareBlock
 from ragent_python.modules.ecommerce.provider import (
     PRODUCT_KNOWLEDGE_BASE_ID,
     ProductCatalogRetrievalProvider,
@@ -59,5 +59,5 @@ class EcommerceModule:
     def register(self) -> ModuleHookResult:
         return ModuleHookResult(
             retrieval_sources=(build_ecommerce_catalog_retrieval_source_spec(),),
-            renderer_blocks=(ProductCardBlock,),
+            renderer_blocks=(ProductCardBlock, SpecCompareBlock),
         )
