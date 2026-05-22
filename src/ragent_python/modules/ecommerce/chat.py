@@ -24,6 +24,9 @@ payload per turn.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import AsyncIterator, Literal
+
+from pydantic import BaseModel, Field
 
 from ragent_python.config import get_settings
 from ragent_python.core.generation.adapter import (
@@ -141,4 +144,80 @@ async def run_ecommerce_chat_turn(
         retrieved_products=products,
         blocks=blocks,
         answer=result,
+    )
+
+
+# NDJSON event envelopes for the streaming preview lane. Each event
+# carries its discriminator under `type`; the TS side dispatches on it
+# to grow the answer buffer, render the retrieval block list, and stop
+# the spinner.
+
+
+class EcommerceChatRetrievalEvent(BaseModel):
+    type: Literal["retrieval"] = "retrieval"
+    query: str
+    retrieved_product_ids: list[str] = Field(default_factory=list)
+    blocks: list[ProductCardBlock] = Field(default_factory=list)
+
+
+class EcommerceChatDeltaEvent(BaseModel):
+    type: Literal["delta"] = "delta"
+    text: str
+
+
+class EcommerceChatDoneEvent(BaseModel):
+    type: Literal["done"] = "done"
+    provider: str
+    model: str | None = None
+    finish_reason: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+
+EcommerceChatStreamEvent = (
+    EcommerceChatRetrievalEvent
+    | EcommerceChatDeltaEvent
+    | EcommerceChatDoneEvent
+)
+
+
+async def run_ecommerce_chat_stream(
+    query: str,
+    *,
+    adapter: GenerationAdapter,
+    filters: ProductCatalogFilters | None = None,
+    retrieval_limit: int = 5,
+    temperature: float | None = None,
+    max_output_tokens: int | None = None,
+) -> AsyncIterator[EcommerceChatStreamEvent]:
+    products = search_products(
+        query,
+        filters=filters or ProductCatalogFilters(),
+        limit=max(0, retrieval_limit),
+    )
+    blocks = [product_to_card_block(product) for product in products]
+    yield EcommerceChatRetrievalEvent(
+        query=query,
+        retrieved_product_ids=[product.product_id for product in products],
+        blocks=blocks,
+    )
+
+    generation_request = build_chat_request(
+        query,
+        products,
+        temperature=temperature,
+        max_output_tokens=max_output_tokens,
+    )
+
+    final_finish: str = "stop"
+    async for chunk in adapter.stream(generation_request):
+        if chunk.delta:
+            yield EcommerceChatDeltaEvent(text=chunk.delta)
+        if chunk.finish_reason is not None:
+            final_finish = chunk.finish_reason
+
+    yield EcommerceChatDoneEvent(
+        provider=getattr(adapter, "name", "unknown"),
+        model=getattr(adapter, "model", None),
+        finish_reason=final_finish,
     )

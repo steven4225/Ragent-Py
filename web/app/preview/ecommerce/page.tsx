@@ -9,6 +9,7 @@ import {
   SPEC_COMPARE_MAX_PRODUCTS,
   type EcommerceChatAnswer,
   type EcommerceChatResponse,
+  type EcommerceChatStreamEvent,
   type EcommerceCompareResponse,
   type EcommerceProductCategory,
   type EcommerceSearchResponse,
@@ -104,6 +105,52 @@ async function fetchChat(query: string): Promise<EcommerceChatResponse> {
   return (await response.json()) as EcommerceChatResponse;
 }
 
+async function streamChat(
+  query: string,
+  onEvent: (event: EcommerceChatStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch("/api/preview/ecommerce/chat/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, retrieval_limit: 5 }),
+  });
+  if (!response.ok || !response.body) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Chat stream failed (${response.status}): ${text}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    let newlineIndex = buffer.indexOf("\n");
+    while (newlineIndex >= 0) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+      if (line.length > 0) {
+        try {
+          onEvent(JSON.parse(line) as EcommerceChatStreamEvent);
+        } catch {
+          // Ignore non-JSON lines (defensive against stray output)
+        }
+      }
+      newlineIndex = buffer.indexOf("\n");
+    }
+  }
+  const tail = buffer.trim();
+  if (tail.length > 0) {
+    try {
+      onEvent(JSON.parse(tail) as EcommerceChatStreamEvent);
+    } catch {
+      // Ignore malformed trailing fragment
+    }
+  }
+}
+
 export default function EcommercePreviewPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | EcommerceProductCategory>("all");
@@ -120,6 +167,8 @@ export default function EcommercePreviewPage() {
   const [chatBlocks, setChatBlocks] = useState<ProductCardBlock[]>([]);
   const [chatError, setChatError] = useState<string | null>(null);
   const [isChatting, startChat] = useTransition();
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
 
   function runChat(currentQuery: string) {
     const trimmed = currentQuery.trim();
@@ -127,6 +176,7 @@ export default function EcommercePreviewPage() {
       return;
     }
     setChatError(null);
+    setStreamingText("");
     startChat(async () => {
       try {
         const result = await fetchChat(trimmed);
@@ -136,6 +186,42 @@ export default function EcommercePreviewPage() {
         setChatError(caught instanceof Error ? caught.message : "Unknown error.");
       }
     });
+  }
+
+  async function runChatStream(currentQuery: string) {
+    const trimmed = currentQuery.trim();
+    if (!trimmed || isStreaming) {
+      return;
+    }
+    setChatError(null);
+    setStreamingText("");
+    setChatAnswer(null);
+    setChatBlocks([]);
+    setIsStreaming(true);
+    let accumulated = "";
+    try {
+      await streamChat(trimmed, (event) => {
+        if (event.type === "retrieval") {
+          setChatBlocks(event.blocks);
+        } else if (event.type === "delta") {
+          accumulated += event.text;
+          setStreamingText(accumulated);
+        } else if (event.type === "done") {
+          setChatAnswer({
+            text: accumulated,
+            provider: event.provider,
+            model: event.model ?? null,
+            finish_reason: event.finish_reason,
+            input_tokens: event.input_tokens ?? null,
+            output_tokens: event.output_tokens ?? null,
+          });
+        }
+      });
+    } catch (caught) {
+      setChatError(caught instanceof Error ? caught.message : "Unknown error.");
+    } finally {
+      setIsStreaming(false);
+    }
   }
 
   function toggleSelect(productId: string) {
@@ -321,7 +407,7 @@ export default function EcommercePreviewPage() {
           </p>
         </div>
         <form
-          className="grid gap-3 sm:grid-cols-[1fr_auto]"
+          className="grid gap-3 sm:grid-cols-[1fr_auto_auto]"
           onSubmit={(event) => {
             event.preventDefault();
             runChat(chatQuery);
@@ -336,16 +422,43 @@ export default function EcommercePreviewPage() {
           />
           <button
             type="submit"
-            disabled={isChatting || !chatQuery.trim()}
+            disabled={isChatting || isStreaming || !chatQuery.trim()}
             className="inline-flex h-[38px] items-center justify-center rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isChatting ? "Asking..." : "Ask"}
+          </button>
+          <button
+            type="button"
+            onClick={() => runChatStream(chatQuery)}
+            disabled={isChatting || isStreaming || !chatQuery.trim()}
+            className="inline-flex h-[38px] items-center justify-center rounded-lg border border-indigo-300 bg-white px-4 text-sm font-medium text-indigo-700 shadow-sm transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isStreaming ? "Streaming..." : "Ask (stream)"}
           </button>
         </form>
         {chatError && (
           <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
             {chatError}
           </p>
+        )}
+        {isStreaming && !chatAnswer && (
+          <div className="flex flex-col gap-2">
+            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+              streaming…
+            </span>
+            {chatBlocks.length > 0 && (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {chatBlocks.map((block) => (
+                  <ProductCard key={block.product_id} block={block} />
+                ))}
+              </div>
+            )}
+            {streamingText && (
+              <p className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+                {streamingText}
+              </p>
+            )}
+          </div>
         )}
         {chatAnswer && (
           <div className="flex flex-col gap-3">

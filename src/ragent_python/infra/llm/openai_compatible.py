@@ -161,8 +161,53 @@ class OpenAICompatibleGenerationAdapter:
         )
 
     async def stream(self, request: GenerationRequest) -> AsyncIterator[GenerationChunk]:
-        # Streaming is deliberately implemented as a fallback to non-stream
-        # generate(); the preview endpoint does not need real SSE in this
-        # push, and keeping a single network path simplifies error mapping.
-        result = await self.generate(request)
-        yield GenerationChunk(delta=result.text, finish_reason=result.finish_reason)
+        if not self.is_available():
+            yield GenerationChunk(delta="", finish_reason="error")
+            return
+        client = self._get_client()
+        model_for_request = request.model_hint or self._model
+        try:
+            stream = await client.chat.completions.create(
+                model=model_for_request,
+                messages=self._to_openai_messages(request),
+                temperature=request.temperature,
+                max_tokens=request.max_output_tokens,
+                stop=request.stop or None,
+                stream=True,
+            )
+        except APITimeoutError:
+            yield GenerationChunk(delta="", finish_reason="error")
+            return
+        except APIError:
+            yield GenerationChunk(delta="", finish_reason="error")
+            return
+
+        last_finish: str | None = None
+        try:
+            async for event in stream:
+                choices = getattr(event, "choices", None) or []
+                if not choices:
+                    continue
+                choice = choices[0]
+                delta_obj = getattr(choice, "delta", None)
+                delta_text = getattr(delta_obj, "content", None) if delta_obj else None
+                finish_raw = getattr(choice, "finish_reason", None)
+                if delta_text:
+                    yield GenerationChunk(delta=delta_text, finish_reason=None)
+                if finish_raw:
+                    last_finish = finish_raw
+        except APITimeoutError:
+            yield GenerationChunk(delta="", finish_reason="error")
+            return
+        except APIError:
+            yield GenerationChunk(delta="", finish_reason="error")
+            return
+
+        mapped_finish: str = "stop"
+        if last_finish == "length":
+            mapped_finish = "length"
+        elif last_finish == "tool_calls":
+            mapped_finish = "tool_call"
+        elif last_finish == "content_filter":
+            mapped_finish = "content_filter"
+        yield GenerationChunk(delta="", finish_reason=mapped_finish)  # type: ignore[arg-type]

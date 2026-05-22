@@ -116,3 +116,29 @@ export interface EcommerceChatResponse {
   blocks: ProductCardBlock[];
   answer: EcommerceChatAnswer;
 }
+
+export interface EcommerceChatStreamRetrievalEvent {
+  type: "retrieval";
+  query: string;
+  retrieved_product_ids: string[];
+  blocks: ProductCardBlock[];
+}
+
+export interface EcommerceChatStreamDeltaEvent {
+  type: "delta";
+  text: string;
+}
+
+export interface EcommerceChatStreamDoneEvent {
+  type: "done";
+  provider: string;
+  model?: string | null;
+  finish_reason: string;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+}
+
+export type EcommerceChatStreamEvent =
+  | EcommerceChatStreamRetrievalEvent
+  | EcommerceChatStreamDeltaEvent
+  | EcommerceChatStreamDoneEvent;

@@ -36,7 +36,14 @@ class MockGenerationAdapter:
 
     async def stream(self, request: GenerationRequest) -> AsyncIterator[GenerationChunk]:
         text = self._render(request)
-        yield GenerationChunk(delta=text, finish_reason="stop")
+        words = text.split(" ")
+        if not words:
+            yield GenerationChunk(delta="", finish_reason="stop")
+            return
+        for index, word in enumerate(words):
+            piece = word if index == 0 else " " + word
+            yield GenerationChunk(delta=piece, finish_reason=None)
+        yield GenerationChunk(delta="", finish_reason="stop")
 
     @staticmethod
     def _render(request: GenerationRequest) -> str:

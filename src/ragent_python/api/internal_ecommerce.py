@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ragent_python.infra.llm.resolver import resolve_generation_adapter
@@ -29,7 +30,10 @@ from ragent_python.modules.ecommerce.catalog import (
     get_products_by_ids,
     search_products,
 )
-from ragent_python.modules.ecommerce.chat import run_ecommerce_chat_turn
+from ragent_python.modules.ecommerce.chat import (
+    run_ecommerce_chat_stream,
+    run_ecommerce_chat_turn,
+)
 
 
 router = APIRouter(prefix="/internal/ecommerce", tags=["ecommerce"])
@@ -163,4 +167,26 @@ async def internal_ecommerce_chat(
             input_tokens=turn.answer.input_tokens,
             output_tokens=turn.answer.output_tokens,
         ),
+    )
+
+
+@router.post("/chat/stream")
+async def internal_ecommerce_chat_stream(
+    request: EcommerceChatRequest,
+) -> StreamingResponse:
+    adapter = resolve_generation_adapter()
+
+    async def _iter_ndjson():
+        async for event in run_ecommerce_chat_stream(
+            request.query,
+            adapter=adapter,
+            filters=_to_domain_filters(request.filters),
+            retrieval_limit=max(0, request.retrieval_limit),
+        ):
+            yield event.model_dump_json() + "\n"
+
+    return StreamingResponse(
+        _iter_ndjson(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )

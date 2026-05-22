@@ -27,7 +27,11 @@ from ragent_python.infra.llm.resolver import (
 from ragent_python.main import create_app
 from ragent_python.modules.ecommerce.catalog import load_products, search_products
 from ragent_python.modules.ecommerce.chat import (
+    EcommerceChatDeltaEvent,
+    EcommerceChatDoneEvent,
+    EcommerceChatRetrievalEvent,
     build_chat_request,
+    run_ecommerce_chat_stream,
     run_ecommerce_chat_turn,
 )
 
@@ -376,6 +380,206 @@ class InternalEcommerceChatEndpointTests(unittest.TestCase):
         body = response.json()
         self.assertEqual(body["query"], "")
         self.assertLessEqual(len(body["retrieved_product_ids"]), 4)
+
+
+class _FakeStreamChoice:
+    def __init__(self, content: str | None = None, finish_reason: str | None = None) -> None:
+        self.delta = type("D", (), {"content": content})()
+        self.finish_reason = finish_reason
+
+
+class _FakeStreamEvent:
+    def __init__(self, content: str | None = None, finish_reason: str | None = None) -> None:
+        self.choices = [_FakeStreamChoice(content, finish_reason)]
+
+
+class _FakeAsyncStream:
+    def __init__(self, events: list[_FakeStreamEvent]) -> None:
+        self._events = events
+
+    def __aiter__(self) -> "_FakeAsyncStream":
+        self._iter = iter(self._events)
+        return self
+
+    async def __anext__(self) -> _FakeStreamEvent:
+        try:
+            return next(self._iter)
+        except StopIteration as stop:
+            raise StopAsyncIteration from stop
+
+
+class _FakeStreamingCompletions:
+    def __init__(self, events: list[_FakeStreamEvent], recorder: dict[str, Any]) -> None:
+        self._events = events
+        self._recorder = recorder
+
+    async def create(self, **kwargs: Any) -> _FakeAsyncStream:
+        self._recorder.update(kwargs)
+        return _FakeAsyncStream(self._events)
+
+
+class _FakeStreamingChatNamespace:
+    def __init__(self, events: list[_FakeStreamEvent], recorder: dict[str, Any]) -> None:
+        self.completions = _FakeStreamingCompletions(events, recorder)
+
+
+class _FakeStreamingAsyncOpenAI:
+    def __init__(self, events: list[_FakeStreamEvent], recorder: dict[str, Any]) -> None:
+        self.chat = _FakeStreamingChatNamespace(events, recorder)
+
+
+class OpenAICompatibleStreamTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        _reset_settings_cache()
+
+    def test_stream_emits_deltas_and_final_finish(self) -> None:
+        recorder: dict[str, Any] = {}
+        events = [
+            _FakeStreamEvent(content="Hel"),
+            _FakeStreamEvent(content="lo"),
+            _FakeStreamEvent(content=" world"),
+            _FakeStreamEvent(content=None, finish_reason="stop"),
+        ]
+        with patch.dict(
+            os.environ,
+            _settings_env(OPENAI_API_KEY="sk-fake", PYTHON_LLM_MODEL="qwen-plus"),
+            clear=False,
+        ):
+            _reset_settings_cache()
+            adapter = OpenAICompatibleGenerationAdapter()
+            adapter._client = _FakeStreamingAsyncOpenAI(events, recorder)  # type: ignore[assignment]
+
+            async def _collect() -> list[Any]:
+                out: list[Any] = []
+                async for chunk in adapter.stream(
+                    GenerationRequest(messages=[GenerationMessage(role="user", content="hi")])
+                ):
+                    out.append(chunk)
+                return out
+
+            chunks = asyncio.run(_collect())
+            deltas = [c.delta for c in chunks if c.delta]
+            self.assertEqual(deltas, ["Hel", "lo", " world"])
+            self.assertTrue(recorder["stream"])
+            self.assertEqual(chunks[-1].finish_reason, "stop")
+
+    def test_stream_maps_length_finish(self) -> None:
+        recorder: dict[str, Any] = {}
+        events = [
+            _FakeStreamEvent(content="too long"),
+            _FakeStreamEvent(content=None, finish_reason="length"),
+        ]
+        with patch.dict(
+            os.environ,
+            _settings_env(OPENAI_API_KEY="sk-fake", PYTHON_LLM_MODEL="qwen-plus"),
+            clear=False,
+        ):
+            _reset_settings_cache()
+            adapter = OpenAICompatibleGenerationAdapter()
+            adapter._client = _FakeStreamingAsyncOpenAI(events, recorder)  # type: ignore[assignment]
+
+            async def _collect() -> list[Any]:
+                out: list[Any] = []
+                async for chunk in adapter.stream(
+                    GenerationRequest(messages=[GenerationMessage(role="user", content="x")])
+                ):
+                    out.append(chunk)
+                return out
+
+            chunks = asyncio.run(_collect())
+            self.assertEqual(chunks[-1].finish_reason, "length")
+
+    def test_stream_yields_error_when_unavailable(self) -> None:
+        with patch.dict(os.environ, _settings_env(), clear=False):
+            _reset_settings_cache()
+            adapter = OpenAICompatibleGenerationAdapter()
+
+            async def _collect() -> list[Any]:
+                out: list[Any] = []
+                async for chunk in adapter.stream(
+                    GenerationRequest(messages=[GenerationMessage(role="user", content="x")])
+                ):
+                    out.append(chunk)
+                return out
+
+            chunks = asyncio.run(_collect())
+            self.assertEqual(len(chunks), 1)
+            self.assertEqual(chunks[0].finish_reason, "error")
+
+
+class EcommerceChatStreamOrchestrationTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        _reset_settings_cache()
+
+    def test_stream_emits_retrieval_then_deltas_then_done(self) -> None:
+        async def _collect() -> list[Any]:
+            out: list[Any] = []
+            async for event in run_ecommerce_chat_stream(
+                "recommend a laptop under 1500",
+                adapter=MockGenerationAdapter(),
+                retrieval_limit=3,
+            ):
+                out.append(event)
+            return out
+
+        events = asyncio.run(_collect())
+        self.assertIsInstance(events[0], EcommerceChatRetrievalEvent)
+        first = events[0]
+        assert isinstance(first, EcommerceChatRetrievalEvent)
+        self.assertGreaterEqual(len(first.blocks), 1)
+        self.assertEqual(len(first.blocks), len(first.retrieved_product_ids))
+
+        delta_events = [e for e in events if isinstance(e, EcommerceChatDeltaEvent)]
+        self.assertGreaterEqual(len(delta_events), 2)
+
+        last = events[-1]
+        self.assertIsInstance(last, EcommerceChatDoneEvent)
+        assert isinstance(last, EcommerceChatDoneEvent)
+        self.assertEqual(last.provider, "mock")
+        self.assertEqual(last.finish_reason, "stop")
+
+
+class InternalEcommerceChatStreamEndpointTests(unittest.TestCase):
+    def setUp(self) -> None:
+        _reset_settings_cache()
+        self.client = TestClient(create_app())
+
+    def tearDown(self) -> None:
+        _reset_settings_cache()
+
+    def test_stream_endpoint_returns_ndjson_with_expected_event_sequence(self) -> None:
+        response = self.client.post(
+            "/internal/ecommerce/chat/stream",
+            json={
+                "query": "recommend a laptop under 1500",
+                "filters": {"category": "laptop", "max_price_usd": 1500},
+                "retrieval_limit": 3,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers["content-type"].split(";")[0].strip(),
+            "application/x-ndjson",
+        )
+        lines = [line for line in response.text.split("\n") if line.strip()]
+        self.assertGreaterEqual(len(lines), 3)
+        import json as _json
+
+        parsed = [_json.loads(line) for line in lines]
+        self.assertEqual(parsed[0]["type"], "retrieval")
+        self.assertEqual(parsed[0]["query"], "recommend a laptop under 1500")
+        self.assertGreaterEqual(len(parsed[0]["retrieved_product_ids"]), 1)
+        self.assertEqual(
+            len(parsed[0]["blocks"]), len(parsed[0]["retrieved_product_ids"])
+        )
+        for block in parsed[0]["blocks"]:
+            self.assertEqual(block["type"], "product_card")
+            self.assertEqual(block["category"], "laptop")
+        delta_payloads = [evt for evt in parsed if evt["type"] == "delta"]
+        self.assertGreaterEqual(len(delta_payloads), 1)
+        self.assertEqual(parsed[-1]["type"], "done")
+        self.assertEqual(parsed[-1]["provider"], "mock")
+        self.assertEqual(parsed[-1]["finish_reason"], "stop")
 
 
 if __name__ == "__main__":
