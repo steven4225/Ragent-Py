@@ -72,7 +72,14 @@ class EcommerceModuleProtocolTests(unittest.TestCase):
         self.assertIn(SpecCompareBlock, result.renderer_blocks)
         self.assertIsNone(result.tool_pack)
         self.assertEqual(result.ingestion_adapters, ())
-        self.assertEqual(result.intent_patterns, ())
+        self.assertGreaterEqual(len(result.intent_patterns), 3)
+        pattern_names = {p.name for p in result.intent_patterns}
+        self.assertIn("ecommerce.product_consult", pattern_names)
+        self.assertIn("ecommerce.product_compare", pattern_names)
+        self.assertIn("ecommerce.product_buy", pattern_names)
+        for pattern in result.intent_patterns:
+            self.assertEqual(pattern.module, "ecommerce")
+            self.assertTrue(pattern.keywords)
         self.assertEqual(result.evals, ())
 
 

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, PanelLeft, Sparkles } from "lucide-react";
+import { ExternalLink, PanelLeft, ShoppingBag, Sparkles } from "lucide-react";
 
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { ChatMessageList } from "@/components/chat/chat-message-list";
@@ -36,6 +36,14 @@ export function ChatShell({ initialConversationId, user }: Props) {
   const [sendError, setSendError] = useState<string | null>(null);
   const [activeTraceId, setActiveTraceId] = useState<string | null>(null);
   const [thinkingContent, setThinkingContent] = useState<string | null>(null);
+  // "Ecommerce mode" routes the next message through the controlled
+  // /internal/chat/router/stream endpoint instead of the default
+  // /internal/chat/stream. The toggle is off by default and only the
+  // user can turn it on; the keyword classifier on the Python side
+  // still falls back to the default chat lane when the message does
+  // not look like a shopping query. See `core/router/intent_router.py`
+  // and `modules/ecommerce/chat_stream_bridge.py` for the dispatch.
+  const [ecommerceMode, setEcommerceMode] = useState(false);
   const cancelledRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -121,7 +129,8 @@ export function ChatShell({ initialConversationId, user }: Props) {
       await sendChatStream(
         {
           conversationId: activeConversationId,
-          message: value
+          message: value,
+          ecommerceMode
         },
         (event: ChatStreamEvent) => {
           if (cancelledRef.current) return;
@@ -243,6 +252,25 @@ export function ChatShell({ initialConversationId, user }: Props) {
               </div>
             </div>
             <div className="hidden items-center gap-2 lg:flex">
+              <button
+                type="button"
+                onClick={() => setEcommerceMode((current) => !current)}
+                aria-pressed={ecommerceMode}
+                title={
+                  ecommerceMode
+                    ? "Ecommerce mode: ON \u2014 routes shopping queries through the ecommerce module's catalog + LLM lane. Click to turn off."
+                    : "Ecommerce mode: OFF \u2014 click to route shopping queries through the ecommerce module's catalog + LLM lane."
+                }
+                className={[
+                  "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                  ecommerceMode
+                    ? "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                ].join(" ")}
+              >
+                <ShoppingBag className="h-3.5 w-3.5" />
+                Ecommerce mode: {ecommerceMode ? "On" : "Off"}
+              </button>
               <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
                 Tenant {user.tenantId}
               </div>

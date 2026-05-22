@@ -60,8 +60,20 @@ export async function POST(request: Request) {
 
   try {
     const user = requireTenantScopeApi(requireSignedInApi(request));
-    const body = (await request.json().catch(() => ({}))) as { message?: string; conversationId?: string };
+    const body = (await request.json().catch(() => ({}))) as {
+      message?: string;
+      conversationId?: string;
+      ecommerceMode?: boolean;
+    };
     const rawMessage = body.message?.trim();
+    // "Ecommerce mode" is a per-request toggle owned by the chat UI.
+    // When on, we route to the controlled /internal/chat/router/stream
+    // endpoint (mode=ecommerce), which classifies the query and either
+    // dispatches to the ecommerce LLM lane or falls back to the default
+    // chat_service stream. When off, the BFF behaves exactly as before
+    // and posts to /internal/chat/stream — i.e. the existing path is
+    // unchanged for every existing user.
+    const ecommerceMode = body.ecommerceMode === true;
     const traceId = createTraceId("chat");
     const runId = createTraceRunId(traceId);
     const runStartedAt = new Date().toISOString();
@@ -117,7 +129,13 @@ export async function POST(request: Request) {
         orgId: user.orgId ?? null,
         role: user.role
       };
-      const pythonResponse = await postPythonJson("/internal/chat/stream", pythonPayload);
+      const pythonStreamPath = ecommerceMode
+        ? "/internal/chat/router/stream"
+        : "/internal/chat/stream";
+      const pythonStreamPayload = ecommerceMode
+        ? { ...pythonPayload, mode: "ecommerce" as const }
+        : pythonPayload;
+      const pythonResponse = await postPythonJson(pythonStreamPath, pythonStreamPayload);
       if (!pythonResponse.ok || !pythonResponse.body) {
         const pythonBody = await pythonResponse.json().catch(() => null);
         const code =

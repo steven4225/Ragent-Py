@@ -4,6 +4,7 @@ import { ReadModelState } from "@/components/common/read-model-state";
 import { FeedbackButtons } from "@/components/chat/feedback-buttons";
 import { MarkdownRenderer } from "@/components/chat/markdown-renderer";
 import { ThinkingIndicator } from "@/components/chat/thinking-indicator";
+import { MessageBlocks } from "@/components/blocks/message-blocks";
 import type { Message, ToolCall } from "@/lib/contracts";
 import { readUnifiedMessageMetadata } from "@/lib/read-model/metadata-mapper";
 
@@ -65,6 +66,9 @@ export function ChatMessageList(props: Props) {
               ) : (
                 <p className="whitespace-pre-wrap">{message.content}</p>
               )}
+              {message.role === "assistant" ? (
+                <MessageBlocks blocks={(message.metadata as { blocks?: unknown })?.blocks} />
+              ) : null}
               {boundary ? <p className="mt-2 text-xs opacity-70">Retrieval boundary: {boundary.mode}{boundary.endpoint ? ` -> ${boundary.endpoint}` : ""}</p> : null}
               {metadata.retrievalSource ? <p className="mt-1 text-xs opacity-70">Retrieval source: {metadata.retrievalSource}</p> : null}
               {metadata.fallbackReason ? <p className="mt-1 text-xs opacity-70">Fallback reason: {metadata.fallbackReason}</p> : null}

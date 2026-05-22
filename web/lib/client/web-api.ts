@@ -48,7 +48,7 @@ export async function sendChat(payload: { conversationId: string; message: strin
 }
 
 export async function sendChatStream(
-  payload: { conversationId: string; message: string },
+  payload: { conversationId: string; message: string; ecommerceMode?: boolean },
   onEvent: (event: ChatStreamEvent) => void,
   signal?: AbortSignal
 ) {
