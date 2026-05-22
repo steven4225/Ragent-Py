@@ -1,12 +1,14 @@
 """LLM provider adapters and resolver.
 
-Step A only ships the mock provider plus the resolver entrypoint. Real
-provider implementations (`openai_provider.py`, `anthropic_provider.py`,
-`ollama_provider.py`) land in a dedicated step before the e-commerce module
-needs real generation.
+`OpenAICompatibleGenerationAdapter` is vendor-agnostic and covers OpenAI
+proper, Alibaba Cloud DashScope (OpenAI-compatible mode), Moonshot,
+DeepSeek, self-hosted vLLM / SGLang, etc. by switching `OPENAI_BASE_URL`
+and `PYTHON_LLM_MODEL`. Anthropic / Ollama remain reserved provider
+names for a follow-up push.
 """
 
 from ragent_python.infra.llm.mock import MockGenerationAdapter
+from ragent_python.infra.llm.openai_compatible import OpenAICompatibleGenerationAdapter
 from ragent_python.infra.llm.resolver import (
     list_known_providers,
     resolve_generation_adapter,
@@ -14,6 +16,7 @@ from ragent_python.infra.llm.resolver import (
 
 __all__ = [
     "MockGenerationAdapter",
+    "OpenAICompatibleGenerationAdapter",
     "list_known_providers",
     "resolve_generation_adapter",
 ]

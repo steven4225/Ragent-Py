@@ -93,3 +93,26 @@ export interface EcommerceCompareResponse {
 }
 
 export const SPEC_COMPARE_MAX_PRODUCTS = 4;
+
+export interface EcommerceChatRequest {
+  query: string;
+  filters?: EcommerceSearchFilters;
+  retrieval_limit?: number;
+}
+
+export interface EcommerceChatAnswer {
+  text: string;
+  provider: string;
+  model?: string | null;
+  finish_reason: string;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+}
+
+export interface EcommerceChatResponse {
+  source: "ecommerce-chat-preview";
+  query: string;
+  retrieved_product_ids: string[];
+  blocks: ProductCardBlock[];
+  answer: EcommerceChatAnswer;
+}

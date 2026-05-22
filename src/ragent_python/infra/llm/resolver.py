@@ -1,13 +1,20 @@
 """Generation adapter resolver.
 
 The resolver walks `settings.llm_fallback_chain` and returns the first
-adapter that reports `is_available() == True`. Today only the mock provider
-is implemented; real providers (OpenAI / Anthropic / Ollama) are registered
-here in a follow-up step and gated by either an API key being present or a
-reachable local endpoint.
+adapter that reports `is_available() == True`. The chain is a comma-
+separated list of provider names; today the registered builders are:
 
-`/healthz` exposes the resolved provider name so E2E checks can refuse a
-``"mock"`` provider when running against staging or production profiles.
+  * ``openai`` / ``openai_compatible``: any OpenAI-compatible service
+    selected by ``OPENAI_BASE_URL`` and ``PYTHON_LLM_MODEL`` (works for
+    OpenAI proper, Alibaba Cloud DashScope, Moonshot, DeepSeek,
+    self-hosted vLLM, etc.; the platform does not bind to a vendor)
+  * ``mock``: unconditional terminal fallback used in tests and dev
+
+Anthropic / Ollama remain reserved provider names; their builders will
+land in a follow-up push without changing the resolver contract.
+
+``/healthz`` exposes the resolved provider name so E2E checks can refuse
+a ``"mock"`` provider when running against staging or production.
 """
 
 from __future__ import annotations
@@ -18,6 +25,7 @@ from typing import Callable
 from ragent_python.config import get_settings
 from ragent_python.core.generation.adapter import GenerationAdapter
 from ragent_python.infra.llm.mock import MockGenerationAdapter
+from ragent_python.infra.llm.openai_compatible import OpenAICompatibleGenerationAdapter
 
 
 ProviderBuilder = Callable[[], GenerationAdapter]
@@ -27,8 +35,14 @@ def _build_mock() -> GenerationAdapter:
     return MockGenerationAdapter()
 
 
+def _build_openai_compatible() -> GenerationAdapter:
+    return OpenAICompatibleGenerationAdapter()
+
+
 _PROVIDER_BUILDERS: dict[str, ProviderBuilder] = {
     "mock": _build_mock,
+    "openai": _build_openai_compatible,
+    "openai_compatible": _build_openai_compatible,
 }
 
 

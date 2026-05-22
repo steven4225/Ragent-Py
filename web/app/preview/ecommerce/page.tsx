@@ -7,6 +7,8 @@ import { SpecCompareTable } from "@/components/blocks/spec-compare-table";
 import {
   ECOMMERCE_PRODUCT_CATEGORIES,
   SPEC_COMPARE_MAX_PRODUCTS,
+  type EcommerceChatAnswer,
+  type EcommerceChatResponse,
   type EcommerceCompareResponse,
   type EcommerceProductCategory,
   type EcommerceSearchResponse,
@@ -89,6 +91,19 @@ async function fetchCompare(productIds: string[]): Promise<EcommerceCompareRespo
   return (await response.json()) as EcommerceCompareResponse;
 }
 
+async function fetchChat(query: string): Promise<EcommerceChatResponse> {
+  const response = await fetch("/api/preview/ecommerce/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, retrieval_limit: 5 }),
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Chat request failed (${response.status}): ${text}`);
+  }
+  return (await response.json()) as EcommerceChatResponse;
+}
+
 export default function EcommercePreviewPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | EcommerceProductCategory>("all");
@@ -100,6 +115,28 @@ export default function EcommercePreviewPage() {
   const [compareBlock, setCompareBlock] = useState<SpecCompareBlock | null>(null);
   const [compareNotice, setCompareNotice] = useState<string | null>(null);
   const [isComparing, startCompare] = useTransition();
+  const [chatQuery, setChatQuery] = useState("");
+  const [chatAnswer, setChatAnswer] = useState<EcommerceChatAnswer | null>(null);
+  const [chatBlocks, setChatBlocks] = useState<ProductCardBlock[]>([]);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [isChatting, startChat] = useTransition();
+
+  function runChat(currentQuery: string) {
+    const trimmed = currentQuery.trim();
+    if (!trimmed) {
+      return;
+    }
+    setChatError(null);
+    startChat(async () => {
+      try {
+        const result = await fetchChat(trimmed);
+        setChatAnswer(result.answer);
+        setChatBlocks(result.blocks);
+      } catch (caught) {
+        setChatError(caught instanceof Error ? caught.message : "Unknown error.");
+      }
+    });
+  }
 
   function toggleSelect(productId: string) {
     setSelectedIds((current) => {
@@ -267,6 +304,87 @@ export default function EcommercePreviewPage() {
         <p className="text-[11px] text-slate-400">
           source: <code className="font-mono">/internal/ecommerce/search</code>
         </p>
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-semibold text-slate-950">
+            Chat · retrieval + GenerationAdapter
+          </p>
+          <p className="text-xs text-slate-500">
+            Runs the same catalog filter as Search, feeds the hits into
+            the resolved `GenerationAdapter`, and returns the model
+            answer + the retrieved `ProductCardBlock` list. Works with
+            any OpenAI-compatible provider (OpenAI proper, DashScope,
+            Moonshot, vLLM, …); falls back to the mock adapter when no
+            key is configured. Does not touch `services/chat_service`.
+          </p>
+        </div>
+        <form
+          className="grid gap-3 sm:grid-cols-[1fr_auto]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            runChat(chatQuery);
+          }}
+        >
+          <input
+            type="text"
+            value={chatQuery}
+            onChange={(event) => setChatQuery(event.target.value)}
+            placeholder='e.g. "recommend a laptop under $1500 with at least 16GB RAM"'
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+          />
+          <button
+            type="submit"
+            disabled={isChatting || !chatQuery.trim()}
+            className="inline-flex h-[38px] items-center justify-center rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isChatting ? "Asking..." : "Ask"}
+          </button>
+        </form>
+        {chatError && (
+          <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            {chatError}
+          </p>
+        )}
+        {chatAnswer && (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono">
+                provider: {chatAnswer.provider}
+              </span>
+              {chatAnswer.model && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono">
+                  model: {chatAnswer.model}
+                </span>
+              )}
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono">
+                finish: {chatAnswer.finish_reason}
+              </span>
+              {(chatAnswer.input_tokens != null || chatAnswer.output_tokens != null) && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono">
+                  tokens: {chatAnswer.input_tokens ?? "?"} / {chatAnswer.output_tokens ?? "?"}
+                </span>
+              )}
+            </div>
+            {chatAnswer.text ? (
+              <p className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+                {chatAnswer.text}
+              </p>
+            ) : (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                The provider returned no text (finish_reason={chatAnswer.finish_reason}). Check `PYTHON_LLM_*` env or fall back to mock.
+              </p>
+            )}
+            {chatBlocks.length > 0 && (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {chatBlocks.map((block) => (
+                  <ProductCard key={block.product_id} block={block} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

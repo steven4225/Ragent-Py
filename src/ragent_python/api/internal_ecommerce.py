@@ -16,6 +16,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from ragent_python.infra.llm.resolver import resolve_generation_adapter
 from ragent_python.modules.ecommerce.blocks import (
     SPEC_COMPARE_MAX_PRODUCTS,
     ProductCardBlock,
@@ -28,6 +29,7 @@ from ragent_python.modules.ecommerce.catalog import (
     get_products_by_ids,
     search_products,
 )
+from ragent_python.modules.ecommerce.chat import run_ecommerce_chat_turn
 
 
 router = APIRouter(prefix="/internal/ecommerce", tags=["ecommerce"])
@@ -112,4 +114,53 @@ async def internal_ecommerce_compare(
         missing_ids=missing,
         truncated=truncated,
         block=block,
+    )
+
+
+class EcommerceChatRequest(BaseModel):
+    query: str
+    filters: EcommerceSearchFilters = Field(default_factory=EcommerceSearchFilters)
+    retrieval_limit: int = 5
+
+
+class EcommerceChatAnswer(BaseModel):
+    text: str
+    provider: str
+    model: str | None = None
+    finish_reason: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+
+class EcommerceChatResponse(BaseModel):
+    source: Literal["ecommerce-chat-preview"] = "ecommerce-chat-preview"
+    query: str
+    retrieved_product_ids: list[str]
+    blocks: list[ProductCardBlock]
+    answer: EcommerceChatAnswer
+
+
+@router.post("/chat", response_model=EcommerceChatResponse)
+async def internal_ecommerce_chat(
+    request: EcommerceChatRequest,
+) -> EcommerceChatResponse:
+    adapter = resolve_generation_adapter()
+    turn = await run_ecommerce_chat_turn(
+        request.query,
+        adapter=adapter,
+        filters=_to_domain_filters(request.filters),
+        retrieval_limit=max(0, request.retrieval_limit),
+    )
+    return EcommerceChatResponse(
+        query=request.query,
+        retrieved_product_ids=[product.product_id for product in turn.retrieved_products],
+        blocks=turn.blocks,
+        answer=EcommerceChatAnswer(
+            text=turn.answer.text,
+            provider=turn.answer.provider,
+            model=turn.answer.model,
+            finish_reason=turn.answer.finish_reason,
+            input_tokens=turn.answer.input_tokens,
+            output_tokens=turn.answer.output_tokens,
+        ),
     )
