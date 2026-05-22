@@ -117,7 +117,7 @@ local-static fallback) still works with zero call-site changes.
 
 ### `modules/ecommerce/`
 
-First end-to-end business module: a 12-SKU 3C catalog (laptops, phones,
+First end-to-end business module: an 18-SKU 3C catalog (laptops, phones,
 tablets, earbuds, monitors) with structured filters, two renderer
 blocks, and a module-scoped chat lane. Contributes to three
 sub-registries through `register()`:
