@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from ragent_python.api.health import router as health_router
 from ragent_python.api.internal_chat import router as internal_chat_router
+from ragent_python.api.internal_ecommerce import router as internal_ecommerce_router
 from ragent_python.api.internal_ingestion import router as internal_ingestion_router
 from ragent_python.api.internal_mcp import router as internal_mcp_router
 from ragent_python.api.internal_retrieval import router as internal_retrieval_router
@@ -20,6 +21,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(health_router)
     app.include_router(internal_chat_router)
+    app.include_router(internal_ecommerce_router)
     app.include_router(internal_ingestion_router)
     app.include_router(internal_mcp_router)
     app.include_router(internal_retrieval_router)

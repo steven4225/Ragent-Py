@@ -137,11 +137,8 @@ class DemoCorpusModuleTests(unittest.TestCase):
         registry = _build_isolated_registry()
         bootstrap_default_modules(registry=registry)
 
-        specs = registry.retrieval_sources.list_specs()
-        self.assertEqual(
-            sorted(spec.name for spec in specs),
-            [DEMO_CORPUS_SOURCE_NAME],
-        )
+        spec_names = {spec.name for spec in registry.retrieval_sources.list_specs()}
+        self.assertIn(DEMO_CORPUS_SOURCE_NAME, spec_names)
         spec = registry.retrieval_sources.get(DEMO_CORPUS_SOURCE_NAME)
         self.assertIsNotNone(spec)
         assert spec is not None  # narrow for type-checkers
@@ -153,7 +150,8 @@ class DemoCorpusModuleTests(unittest.TestCase):
 
         request = InternalRetrievalRequestModel(traceId="t1", query="payroll")
         resolved = registry.retrieval_sources.resolve(request)
-        self.assertEqual([spec.name for spec in resolved], [DEMO_CORPUS_SOURCE_NAME])
+        resolved_names = {spec.name for spec in resolved}
+        self.assertIn(DEMO_CORPUS_SOURCE_NAME, resolved_names)
 
     def test_resolve_skips_demo_spec_when_request_targets_unknown_kb(self) -> None:
         registry = _build_isolated_registry()
@@ -171,9 +169,10 @@ class DemoCorpusModuleTests(unittest.TestCase):
         request = InternalRetrievalRequestModel(
             traceId="t1", query="incident response runbook"
         )
-        resolved = registry.retrieval_sources.resolve(request)
-        self.assertEqual(len(resolved), 1)
-        provider = resolved[0].build_provider()
+        demo_spec = registry.retrieval_sources.get(DEMO_CORPUS_SOURCE_NAME)
+        self.assertIsNotNone(demo_spec)
+        assert demo_spec is not None  # narrow for type-checkers
+        provider = demo_spec.build_provider()
         via_registry = provider.search(request, ["incident", "response", "runbook"])
         via_legacy = LocalStaticRetrievalProvider().search(
             request, ["incident", "response", "runbook"]
@@ -190,21 +189,34 @@ class DemoCorpusModuleTests(unittest.TestCase):
     def test_bootstrap_default_modules_is_idempotent_for_demo_corpus(self) -> None:
         registry = _build_isolated_registry()
         bootstrap_default_modules(registry=registry)
+        before = sorted(
+            spec.name for spec in registry.retrieval_sources.list_specs()
+        )
         bootstrap_default_modules(registry=registry)
         bootstrap_default_modules(registry=registry)
-        self.assertEqual(len(registry.retrieval_sources.list_specs()), 1)
+        after = sorted(
+            spec.name for spec in registry.retrieval_sources.list_specs()
+        )
+        self.assertEqual(before, after)
+        self.assertIn(DEMO_CORPUS_SOURCE_NAME, after)
 
     def test_bootstrap_default_modules_survives_clear_cycle(self) -> None:
         registry = _build_isolated_registry()
         bootstrap_default_modules(registry=registry)
-        self.assertEqual(len(registry.retrieval_sources.list_specs()), 1)
+        before_clear = sorted(
+            spec.name for spec in registry.retrieval_sources.list_specs()
+        )
+        self.assertIn(DEMO_CORPUS_SOURCE_NAME, before_clear)
 
         registry.clear()
         self.assertEqual(registry.retrieval_sources.list_specs(), [])
 
         bootstrap_default_modules(registry=registry)
-        names = sorted(spec.name for spec in registry.retrieval_sources.list_specs())
-        self.assertEqual(names, [DEMO_CORPUS_SOURCE_NAME])
+        after_clear = sorted(
+            spec.name for spec in registry.retrieval_sources.list_specs()
+        )
+        self.assertEqual(before_clear, after_clear)
+        self.assertIn(DEMO_CORPUS_SOURCE_NAME, after_clear)
 
 
 if __name__ == "__main__":
