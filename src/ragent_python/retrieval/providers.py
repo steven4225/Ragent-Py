@@ -6,6 +6,7 @@ from typing import Protocol
 from ragent_python.contracts.internal_api import InternalRetrievalRequestModel
 from ragent_python.contracts.public_api import RetrievalChunkModel
 from ragent_python.config import get_settings
+from ragent_python.modules.demo_corpus.provider import LocalStaticRetrievalProvider
 from ragent_python.retrieval.bm25_provider import BM25RetrievalProvider
 from ragent_python.retrieval.corpus import iter_ingestion_corpus, iter_local_corpus
 from ragent_python.retrieval.reranker import BGEReranker, HeuristicReranker, NoopReranker
@@ -34,29 +35,6 @@ class IndexProvider(Protocol):
     provider_name: str
 
     def index_chunks(self, *args, **kwargs): ...
-
-class LocalStaticRetrievalProvider:
-    provider_name = "python-local-retrieval"
-
-    def search(self, request: InternalRetrievalRequestModel, query_terms: list[str]) -> list[RetrievalChunkModel]:
-        results: list[RetrievalChunkModel] = []
-        for chunk in iter_local_corpus(request):
-            score = score_text([chunk.title, chunk.content, *chunk.terms], query_terms)
-            if score <= 0:
-                continue
-            results.append(
-                RetrievalChunkModel(
-                    chunkId=chunk.chunk_id,
-                    knowledgeBaseId=chunk.knowledge_base_id,
-                    documentId=chunk.document_id,
-                    title=chunk.title,
-                    content=chunk.content,
-                    score=float(score),
-                    source=self.provider_name,
-                    metadata={**chunk.metadata, "provider": "local-static"},
-                )
-            )
-        return results
 
 
 class IngestionTaskRetrievalProvider:
