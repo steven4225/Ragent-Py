@@ -258,6 +258,7 @@ export default function ShopperWorkbenchPage() {
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedById, setSelectedById] = useState<Record<string, ProductCardBlock>>({});
   const [compareBlock, setCompareBlock] = useState<SpecCompareBlock | null>(null);
   const [isComparing, setIsComparing] = useState<boolean>(false);
   const [compareNotice, setCompareNotice] = useState<string | null>(null);
@@ -309,23 +310,39 @@ export default function ShopperWorkbenchPage() {
   const onPickTask = useCallback((entry: TaskEntry) => {
     setActiveTaskId(entry.id);
     setTaskSeedQuery(entry.query);
-    setFilter((current) => ({
-      ...current,
+    setFilter({
       category: entry.category as EcommerceProductCategory | null,
       priceBandId: priceBandIdFor(entry.minPrice, entry.maxPrice),
+      brand: null,
       refine: "",
-    }));
-    setSelectedIds([]);
+    });
     setCompareBlock(null);
     setCompareNotice(null);
   }, []);
 
+  const blocksRef = useRef<ProductCardBlock[]>([]);
+  useEffect(() => {
+    blocksRef.current = blocks;
+  }, [blocks]);
+
   const onToggleCompare = useCallback((productId: string) => {
     setSelectedIds((current) => {
       if (current.includes(productId)) {
+        setSelectedById((map) => {
+          if (!(productId in map)) return map;
+          const next = { ...map };
+          delete next[productId];
+          return next;
+        });
         return current.filter((id) => id !== productId);
       }
       if (current.length >= SELECTION_LIMIT) return current;
+      const block = blocksRef.current.find((b) => b.product_id === productId);
+      if (block) {
+        setSelectedById((map) =>
+          productId in map ? map : { ...map, [productId]: block },
+        );
+      }
       return [...current, productId];
     });
     setCompareBlock(null);
@@ -334,6 +351,7 @@ export default function ShopperWorkbenchPage() {
 
   const onClearSelection = useCallback(() => {
     setSelectedIds([]);
+    setSelectedById({});
     setCompareBlock(null);
     setCompareNotice(null);
   }, []);
@@ -426,9 +444,9 @@ export default function ShopperWorkbenchPage() {
   const selectedBlocks = useMemo(
     () =>
       selectedIds
-        .map((id) => blocks.find((block) => block.product_id === id))
+        .map((id) => selectedById[id])
         .filter((b): b is ProductCardBlock => Boolean(b)),
-    [blocks, selectedIds],
+    [selectedById, selectedIds],
   );
 
   const onAskAboutCard = useCallback(
