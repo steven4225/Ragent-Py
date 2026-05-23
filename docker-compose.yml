@@ -1,10 +1,13 @@
 # One-command demo stack for Ragent.
 #
-#   docker compose up                          # web + python-api (no vector store)
-#   docker compose --profile qdrant up         # also start Qdrant + flip retrieval backend
+#   docker compose up                                       # web + python-api (no vector store, no Postgres)
+#   docker compose --profile qdrant up                      # also start Qdrant + flip retrieval backend
+#   docker compose --profile postgres up                    # also start Postgres + persist BFF platform state there
+#   docker compose --profile qdrant --profile postgres up   # full stack
 #
-# Host ports default to 3000 (web), 8000 (python-api), and
-# 6333/6334 (qdrant, only with the profile enabled).
+# Host ports default to 3000 (web), 8000 (python-api),
+# 6333/6334 (qdrant, only with --profile qdrant), and
+# 5432 (postgres, only with --profile postgres).
 #
 # Configuration is read from `.env.docker` in this directory (which is
 # gitignored). Start by copying `.env.docker.example` to `.env.docker`
@@ -58,6 +61,12 @@ services:
     depends_on:
       python-api:
         condition: service_healthy
+      # `postgres` lives under the postgres profile. Compose silently
+      # drops this dependency when the profile is not activated, so the
+      # default `docker compose up` still works without Postgres.
+      postgres:
+        condition: service_healthy
+        required: false
     env_file:
       - .env.docker
     environment:
@@ -70,6 +79,13 @@ services:
       NODE_ENV: "production"
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
+      # Default the Postgres connection string to the in-network
+      # `postgres` service. This is harmless when the postgres profile
+      # is NOT enabled (the BFF still falls back to json/sqlite based
+      # on TS_PLATFORM_STATE_BACKEND), and it lets users opt-in to the
+      # Postgres backend by setting TS_PLATFORM_STATE_BACKEND=postgres
+      # in .env.docker without having to also hand-edit the URL.
+      TS_PLATFORM_STATE_DATABASE_URL: "${TS_PLATFORM_STATE_DATABASE_URL:-postgres://ragent:ragent-dev@postgres:5432/ragent}"
     ports:
       - "${RAGENT_WEB_HOST_PORT:-3000}:3000"
     healthcheck:
@@ -90,8 +106,33 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: ragent-postgres
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      # These match the connection string the web service defaults to.
+      # Override here AND in TS_PLATFORM_STATE_DATABASE_URL (in
+      # .env.docker) if you want different credentials.
+      POSTGRES_USER: "${POSTGRES_USER:-ragent}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-ragent-dev}"
+      POSTGRES_DB: "${POSTGRES_DB:-ragent}"
+    ports:
+      - "${RAGENT_POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-ragent} -d $${POSTGRES_DB:-ragent}"]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 6
+
 volumes:
   python_data:
     name: ragent_python_data
   qdrant_data:
     name: ragent_qdrant_data
+  postgres_data:
+    name: ragent_postgres_data
