@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { buildOidcAuthorizationUrl, generateOidcState, getOidcConfig } from "@/lib/auth/oidc";
+import { buildOidcAuthorizationUrl, generateOidcState, resolveOidcConfig } from "@/lib/auth/oidc";
 import { isOidcEnabled, setOidcStateCookie } from "@/lib/auth/session";
 
 function resolveRedirectUri(request: Request): string {
@@ -21,16 +21,27 @@ export async function GET(request: Request) {
     );
   }
 
-  const config = getOidcConfig();
-  const redirectUri = resolveRedirectUri(request);
-  const state = generateOidcState();
-  const redirectUrl = buildOidcAuthorizationUrl({
-    config,
-    state,
-    redirectUri
-  });
+  try {
+    const config = await resolveOidcConfig();
+    const redirectUri = resolveRedirectUri(request);
+    const state = generateOidcState();
+    const redirectUrl = buildOidcAuthorizationUrl({
+      config,
+      state,
+      redirectUri
+    });
 
-  const response = NextResponse.redirect(redirectUrl);
-  setOidcStateCookie(response, state);
-  return response;
+    const response = NextResponse.redirect(redirectUrl);
+    setOidcStateCookie(response, state);
+    return response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "OIDC login could not be initialized.";
+    return NextResponse.json(
+      {
+        code: "OIDC_CONFIG_INVALID",
+        message
+      },
+      { status: 500 }
+    );
+  }
 }

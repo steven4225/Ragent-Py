@@ -98,13 +98,22 @@ export function isOidcEnabled(): boolean {
 }
 
 export function isMockFallbackEnabled(): boolean {
-  // mock 回退用于本地联调/试运行；生产默认不建议依赖。
+  // Mock fallback exists for local development and screenshots. It is
+  // a hard-coded safety rule that it CANNOT be active when the
+  // process is running in `oidc` mode with NODE_ENV=production —
+  // regardless of what `AUTH_MOCK_FALLBACK_ENABLED` says. This
+  // prevents a misconfigured deployment from accidentally accepting
+  // mock identities while real SSO is wired in.
+  const mode = getAuthProviderMode();
+  const isProduction = process.env.NODE_ENV === "production";
+  if (mode === "oidc" && isProduction) return false;
+
   const explicit = process.env.AUTH_MOCK_FALLBACK_ENABLED;
   if (typeof explicit === "string" && explicit.trim().length > 0) {
     return isTrue(explicit);
   }
-  if (getAuthProviderMode() === "mock") return true;
-  return process.env.NODE_ENV !== "production";
+  if (mode === "mock") return true;
+  return !isProduction;
 }
 
 export function isHeaderAuthEnabled(): boolean {

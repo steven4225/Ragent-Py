@@ -494,6 +494,106 @@ Adapter behavior is identical across providers:
 `.env.example` lists ready-to-paste config blocks for several common
 providers.
 
+## Authentication
+
+The `web/` Next.js BFF ships two auth provider modes, selected via the
+`AUTH_PROVIDER_MODE` env var:
+
+| Mode  | When to use                                    | How users sign in                          |
+| ----- | ---------------------------------------------- | ------------------------------------------ |
+| `oidc`| Anything real users can reach.                 | Real SSO via the configured IdP.           |
+| `mock`| Local development, screenshots, CI smoke tests.| Click a demo persona on the login page.    |
+
+### Real OIDC (production path)
+
+The minimum viable config is just three env vars:
+
+```bash
+AUTH_PROVIDER_MODE=oidc
+AUTH_OIDC_ISSUER=https://your-tenant.us.auth0.com/
+AUTH_OIDC_CLIENT_ID=...
+AUTH_OIDC_CLIENT_SECRET=...
+# AUTH_OIDC_REDIRECT_URI defaults to <request-origin>/api/auth/oidc/callback;
+# override it only if you sit behind a reverse proxy that rewrites the host.
+```
+
+`web/lib/auth/oidc.ts` fetches
+`<issuer>/.well-known/openid-configuration` on first sign-in and pulls
+`authorization_endpoint`, `token_endpoint`, `userinfo_endpoint`, and
+`end_session_endpoint` from there. The document is cached
+per-process; restart the web container to force re-discovery after an
+IdP rotation.
+
+Provider quickstarts — values to use for `AUTH_OIDC_ISSUER`:
+
+| Provider             | `AUTH_OIDC_ISSUER`                                          |
+| -------------------- | ----------------------------------------------------------- |
+| Auth0                | `https://YOUR_TENANT.us.auth0.com/`                         |
+| Okta                 | `https://YOUR_DOMAIN/oauth2/default`                        |
+| Google               | `https://accounts.google.com`                               |
+| Microsoft Entra ID   | `https://login.microsoftonline.com/<tenant-id>/v2.0`        |
+| Keycloak             | `https://YOUR_HOST/realms/<realm>`                          |
+
+If your IdP does NOT publish a discovery document (or you want to pin
+endpoints), set `AUTH_OIDC_AUTHORIZATION_ENDPOINT`,
+`AUTH_OIDC_TOKEN_ENDPOINT`, `AUTH_OIDC_USERINFO_ENDPOINT`, and
+optionally `AUTH_OIDC_END_SESSION_ENDPOINT` directly — they take
+precedence over discovery.
+
+Claim mapping is also fully configurable (the defaults match the OIDC
+core spec where applicable):
+
+| Env var                          | Default       | Purpose                                                                |
+| -------------------------------- | ------------- | ---------------------------------------------------------------------- |
+| `AUTH_OIDC_USER_ID_CLAIM`        | `sub`         | Maps to `SessionUser.userId`.                                          |
+| `AUTH_OIDC_NAME_CLAIM`           | `name`        | Maps to display name; falls back to `email` / `preferred_username`.    |
+| `AUTH_OIDC_ROLE_CLAIM`           | `role`        | Used to promote users to `admin`.                                      |
+| `AUTH_OIDC_ADMIN_ROLE_VALUES`    | `admin`       | CSV; any role-claim value matching one of these flips role to admin.   |
+| `AUTH_OIDC_TENANT_CLAIM`         | `tenant_id`   | Maps to `SessionUser.tenantId` (multi-tenant scope).                   |
+| `AUTH_OIDC_ORG_CLAIM`            | `org_id`      | Maps to `SessionUser.orgId`.                                           |
+| `AUTH_OIDC_DEFAULT_ROLE`         | `user`        | Used when the IdP does not provide a role claim.                       |
+| `AUTH_OIDC_DEFAULT_TENANT_ID`    | _(unset)_     | Default tenant when the IdP does not provide one.                      |
+| `AUTH_OIDC_DEFAULT_ORG_ID`       | _(unset)_     | Default org when the IdP does not provide one.                         |
+| `AUTH_OIDC_SCOPES`               | `openid profile email` | Override if you need to request additional scopes.            |
+
+### Production hardening
+
+`web/lib/auth/session.ts` enforces one safety rule that cannot be
+overridden by env vars: when `AUTH_PROVIDER_MODE=oidc` AND
+`NODE_ENV=production`, `isMockFallbackEnabled()` is hard-coded to
+return `false` — even if `AUTH_MOCK_FALLBACK_ENABLED=true` was set.
+The mock-login endpoint `POST /api/auth/session` then rejects with
+`MOCK_AUTH_DISABLED`. This prevents a misconfigured deployment from
+accidentally accepting fake identities while real SSO is wired in.
+
+The Docker Compose stack pins `NODE_ENV=production` for the web
+container, so the rule activates automatically the moment you flip
+`AUTH_PROVIDER_MODE` from `mock` to `oidc` in `.env.docker`.
+
+### Mock auth (dev only)
+
+Set `AUTH_PROVIDER_MODE=mock` (and optionally
+`AUTH_MOCK_FALLBACK_ENABLED=true`) to expose the demo persona picker
+on `/login`. The login page reads `/api/auth/session` for the current
+mode and only renders the mock persona buttons when mock fallback is
+enabled — in production OIDC mode they are hidden automatically.
+
+### Verifying OIDC end-to-end
+
+`web/scripts/verify-oidc-e2e.mjs` boots an in-process mock IdP that
+serves a discovery document, runs `next start`, drives the real
+authorize → callback → session-cookie flow for both a `user` and an
+`admin` persona, and finally asserts that production hardening keeps
+the mock-login endpoint disabled even when
+`AUTH_MOCK_FALLBACK_ENABLED=true` is set:
+
+```bash
+cd web
+npm run verify:oidc-e2e
+```
+
+The report lands at `tmp/oidc-e2e/report.json`.
+
 ## Continuous Integration
 
 Two workflows gate `main`:
@@ -534,5 +634,6 @@ npm run typecheck
 npm run verify:rag-e2e
 npm run verify:mcp-runtime-e2e
 npm run verify:auth-scope-e2e
+npm run verify:oidc-e2e
 # DATABASE_URL=postgres://... npm run verify:postgres-state-backend
 ```

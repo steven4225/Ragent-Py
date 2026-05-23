@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { exchangeOidcCode, fetchOidcUserInfo, getOidcConfig, mapOidcClaimsToSessionUser } from "@/lib/auth/oidc";
+import { exchangeOidcCode, fetchOidcUserInfo, mapOidcClaimsToSessionUser, resolveOidcConfig } from "@/lib/auth/oidc";
 import {
   clearOidcStateCookie,
   getOidcStateCookieValue,
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const config = getOidcConfig();
+    const config = await resolveOidcConfig();
     const redirectUri = resolveRedirectUri(request);
     // 第一步：用授权码换取 access token。
     const { accessToken } = await exchangeOidcCode({
