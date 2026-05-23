@@ -464,7 +464,36 @@ per-entity schema (one table per conversation / message / trace etc.)
 is a follow-up; the goal of this iteration is "do not lose state when
 the container restarts," not "scale to multi-replica".
 
-To verify the adapter end-to-end against a real Postgres:
+### Using the bundled `postgres` service (docker-compose)
+
+The compose stack ships a `postgres` service gated behind
+`--profile postgres`. To enable it for a "do not lose chat history on
+restart" demo:
+
+1. In `.env.docker`, uncomment the two `TS_PLATFORM_STATE_*` lines
+   (already done in `.env.docker.example` for you):
+
+   ```bash
+   TS_PLATFORM_STATE_BACKEND=postgres
+   TS_PLATFORM_STATE_DATABASE_URL=postgres://ragent:ragent-dev@postgres:5432/ragent
+   ```
+
+2. Bring the stack up with the profile flag:
+
+   ```bash
+   docker compose --profile postgres up
+   ```
+
+   The web container's `depends_on.postgres` is marked
+   `required: false`, so launching without `--profile postgres`
+   continues to work and the BFF falls back to the json/sqlite
+   backend.
+
+Postgres data persists in the `ragent_postgres_data` named volume
+across `docker compose down` / `docker compose up` cycles, so chat
+history survives container restarts.
+
+### Verifying the adapter directly against a real Postgres
 
 ```bash
 docker run -d --rm --name ragent-pg-test \
