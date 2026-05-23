@@ -67,13 +67,23 @@ async function main() {
       env: {
         TS_PLATFORM_STATE_PATH: stateFilePath,
         RAGENT_FORCE_LOCAL_GENERATION: "true",
+        // `next start` always runs in NODE_ENV=production, which makes
+        // the session module require AUTH_SESSION_SECRET. Set a stable
+        // dev-only value so the spawned web process can sign cookies.
+        AUTH_SESSION_SECRET: "oidc-e2e-fake-session-secret-do-not-use",
         AUTH_PROVIDER_MODE: "oidc",
-        AUTH_MOCK_FALLBACK_ENABLED: "false",
+        // We deliberately set this to "true" — the production
+        // hardening in lib/auth/session.ts must keep mock fallback
+        // OFF when NODE_ENV=production AND AUTH_PROVIDER_MODE=oidc,
+        // regardless of what this env var says. The dedicated
+        // verifyMockHardening step below asserts that behaviour.
+        AUTH_MOCK_FALLBACK_ENABLED: "true",
         AUTH_HEADER_AUTH_ENABLED: "false",
         AUTH_MOCK_DEFAULT_ROLE: "",
-        AUTH_OIDC_AUTHORIZATION_ENDPOINT: `${oidcBaseUrl()}/authorize`,
-        AUTH_OIDC_TOKEN_ENDPOINT: `${oidcBaseUrl()}/token`,
-        AUTH_OIDC_USERINFO_ENDPOINT: `${oidcBaseUrl()}/userinfo`,
+        // Exercise OIDC discovery: only AUTH_OIDC_ISSUER is set, the
+        // resolver must fetch /.well-known/openid-configuration from
+        // the mock provider and fill in the three endpoints itself.
+        AUTH_OIDC_ISSUER: oidcBaseUrl(),
         AUTH_OIDC_CLIENT_ID: "oidc-e2e-client",
         AUTH_OIDC_CLIENT_SECRET: "oidc-e2e-secret",
         AUTH_OIDC_DEFAULT_ROLE: "user",
@@ -117,6 +127,7 @@ async function runVerification(mockOidc) {
     userJar: userLogin.jar,
     adminJar: adminLogin.jar
   });
+  const hardeningChecks = await verifyMockHardening();
 
   return {
     generatedAt: new Date().toISOString(),
@@ -145,7 +156,40 @@ async function runVerification(mockOidc) {
     checks: {
       userSession: userChecks,
       adminSession: adminChecks,
-      mcpRuntime: mcpChecks
+      mcpRuntime: mcpChecks,
+      mockHardening: hardeningChecks
+    }
+  };
+}
+
+async function verifyMockHardening() {
+  // With AUTH_PROVIDER_MODE=oidc and NODE_ENV=production, the mock
+  // session endpoint must reject mock-login attempts even if
+  // AUTH_MOCK_FALLBACK_ENABLED is set to "true" in the parent
+  // environment. This guards against an operator accidentally
+  // leaving fake-login open in a deployment.
+  const session = await fetchJson(`${baseUrl()}/api/auth/session`);
+  const attemptResponse = await fetchWithBody(`${baseUrl()}/api/auth/session`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ role: "admin" })
+  });
+
+  return {
+    sessionBootstrap: {
+      mode: session.mode,
+      oidcEnabled: session.oidcEnabled,
+      mockFallbackEnabled: session.mockFallbackEnabled
+    },
+    mockLoginAttempt: {
+      status: attemptResponse.status,
+      code: attemptResponse.body?.code ?? null
+    },
+    assertions: {
+      mockFallbackHardOff: session.mockFallbackEnabled === false,
+      mockLoginRejected: attemptResponse.status === 403 && attemptResponse.body?.code === "MOCK_AUTH_DISABLED"
     }
   };
 }
@@ -429,6 +473,16 @@ function assertReport(report) {
   if (!mcpChecks.assertions.userDeniedByToolGuard) failures.push("MCP runtime does not deny admin-only tool for OIDC user session");
   if (!mcpChecks.assertions.adminAllowedByToolGuard) failures.push("MCP runtime does not allow admin tool for OIDC admin session");
 
+  const hardeningChecks = report.checks.mockHardening;
+  if (!hardeningChecks.assertions.mockFallbackHardOff) {
+    failures.push(
+      "mock fallback was reported enabled even though AUTH_PROVIDER_MODE=oidc + NODE_ENV=production should force it off"
+    );
+  }
+  if (!hardeningChecks.assertions.mockLoginRejected) {
+    failures.push("POST /api/auth/session was NOT rejected by the production hardening; mock login was reachable");
+  }
+
   if (failures.length > 0) {
     throw new Error(`OIDC E2E verification failed:\n- ${failures.join("\n- ")}`);
   }
@@ -453,12 +507,35 @@ function readToolError(call) {
 
 function decodeSessionCookie(rawCookie) {
   if (!rawCookie) return null;
+  // The session cookie has been signed for a while now: the value is
+  // `<json-payload>.<base64url-hmac>`. We only need the payload here
+  // — server-side decode already verified the signature when this
+  // request was set up, so it's safe to read the unsigned JSON.
+  const candidates = [rawCookie];
   try {
-    const decoded = decodeURIComponent(rawCookie);
-    return JSON.parse(decoded);
+    candidates.push(decodeURIComponent(rawCookie));
   } catch {
-    return null;
+    // ignore: cookie wasn't URL-encoded
   }
+
+  for (const candidate of candidates) {
+    const dot = candidate.lastIndexOf(".");
+    if (dot > 0) {
+      try {
+        const parsed = JSON.parse(candidate.slice(0, dot));
+        if (parsed && typeof parsed === "object") return parsed;
+      } catch {
+        // fall through to next candidate
+      }
+    }
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
 }
 
 function createCookieJar() {
@@ -610,6 +687,24 @@ async function startMockOidcProvider({ port }) {
     if (req.method === "GET" && requestUrl.pathname === "/healthz") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    if (req.method === "GET" && requestUrl.pathname === "/.well-known/openid-configuration") {
+      const base = `http://127.0.0.1:${port}`;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          issuer: base,
+          authorization_endpoint: `${base}/authorize`,
+          token_endpoint: `${base}/token`,
+          userinfo_endpoint: `${base}/userinfo`,
+          end_session_endpoint: `${base}/logout`,
+          response_types_supported: ["code"],
+          grant_types_supported: ["authorization_code"],
+          token_endpoint_auth_methods_supported: ["client_secret_post"]
+        })
+      );
       return;
     }
 
