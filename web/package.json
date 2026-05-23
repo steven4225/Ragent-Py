@@ -17,6 +17,7 @@
     "verify:mcp-runtime-e2e": "node ./scripts/verify-mcp-runtime-e2e.mjs",
     "verify:auth-scope-e2e": "node ./scripts/verify-auth-scope-e2e.mjs",
     "verify:oidc-e2e": "node ./scripts/verify-oidc-e2e.mjs",
+    "verify:postgres-state-backend": "node --experimental-strip-types ./scripts/verify-postgres-state-backend.mjs",
     "verify:smoke-phase1": "npm run verify:rag-e2e && npm run verify:async-ingestion-e2e && npm run verify:auth-scope-e2e && npm run verify:mcp-runtime-e2e && npm run verify:vector-db-e2e",
     "eval": "npx tsx lib/eval/eval-runner.ts"
   },
@@ -26,6 +27,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^0.453.0",
     "next": "^16.1.6",
+    "pg": "^8.21.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
@@ -36,6 +38,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^22.5.5",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@types/react-syntax-highlighter": "^15.5.13",
