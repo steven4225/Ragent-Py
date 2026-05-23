@@ -1,0 +1,15 @@
+# Web (Next.js) image .dockerignore.
+node_modules/
+.next/
+.turbo/
+out/
+dist/
+build/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.git/
+.gitignore
+README.md

@@ -5,6 +5,7 @@ MIGRATION_*.md
 .env
 .env.*
 !.env.example
+!.env.docker.example
 
 # Local-only notes and overrides
 *.local
