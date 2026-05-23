@@ -241,6 +241,59 @@ PYTHON_API_BASE_URL=http://127.0.0.1:8000
 With that setup `web/` handles browser-facing routes and Python handles
 the execution behind them.
 
+## Platform state persistence
+
+The `web/` BFF stores conversations, messages, traces, ingestion
+tasks, knowledge bases, settings, mappings, sample questions, intents,
+and users in a single platform-state blob. Three backends are
+supported, selected via `TS_PLATFORM_STATE_BACKEND`:
+
+| Backend     | Env value          | Where it stores                                                      | Survives container restart? |
+| ----------- | ------------------ | -------------------------------------------------------------------- | --------------------------- |
+| JSON file   | `json` (default)   | `TS_PLATFORM_STATE_PATH` (defaults to `.data/ts-platform-state.json`)| Yes, if `.data` is a volume.|
+| SQLite      | `sqlite`           | `TS_PLATFORM_STATE_SQLITE_PATH` (defaults to `.data/...sqlite`)      | Yes, if `.data` is a volume.|
+| Postgres    | `postgres`         | The connection string in `TS_PLATFORM_STATE_DATABASE_URL`            | Yes, regardless of replica. |
+
+Postgres-specific env vars:
+
+```bash
+TS_PLATFORM_STATE_BACKEND=postgres
+TS_PLATFORM_STATE_DATABASE_URL=postgres://user:pass@host:5432/dbname
+# Optional: override the table name (default platform_state) and row
+# key (default "default"). Useful if you want to share a database with
+# another app.
+TS_PLATFORM_STATE_POSTGRES_TABLE=platform_state
+TS_PLATFORM_STATE_POSTGRES_KEY=default
+```
+
+The Postgres backend is a write-back JSONB blob with the same
+`{state_key TEXT PRIMARY KEY, payload JSONB, updated_at TIMESTAMPTZ}`
+shape the SQLite backend uses. Reads come from an in-memory cache that
+is hydrated once at boot; writes are applied to the cache
+synchronously and flushed to Postgres in the background, coalesced so
+that bursts of updates land as one row write. `beforeExit`, `SIGTERM`,
+and `SIGINT` all drain the pending flush queue before the process
+exits.
+
+This is a deliberately conservative design — the repository layer in
+`web/lib/repositories/platform-repositories.ts` is unchanged, so the
+Postgres backend is a drop-in replacement for json/sqlite. A proper
+per-entity schema (one table per conversation / message / trace etc.)
+is a follow-up; the goal of this iteration is "do not lose state when
+the container restarts," not "scale to multi-replica".
+
+To verify the adapter end-to-end against a real Postgres:
+
+```bash
+docker run -d --rm --name ragent-pg-test \
+  -e POSTGRES_PASSWORD=devpass -e POSTGRES_USER=ragent \
+  -e POSTGRES_DB=ragent -p 25432:5432 postgres:16-alpine
+
+cd web
+DATABASE_URL=postgres://ragent:devpass@127.0.0.1:25432/ragent \
+  node --experimental-strip-types ./scripts/verify-postgres-state-backend.mjs
+```
+
 ## Python Runtime Endpoints
 
 Core runtime (main pipeline):
@@ -410,4 +463,5 @@ npm run typecheck
 npm run verify:rag-e2e
 npm run verify:mcp-runtime-e2e
 npm run verify:auth-scope-e2e
+# DATABASE_URL=postgres://... npm run verify:postgres-state-backend
 ```
