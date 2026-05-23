@@ -1,0 +1,33 @@
+# Ragent Python image .dockerignore — minimize build context shipped
+# to the docker daemon (the python image only needs pyproject.toml,
+# README.md, and src/).
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.runtime/
+**/.venv/
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.docker.example
+**/node_modules/
+**/.next/
+**/.turbo/
+**/dist/
+**/build/
+**/coverage/
+
+# Tests & local-dev artifacts not needed to run the runtime image.
+tests/
+scripts/
+docs/
+.github/
+.git/
+.gitignore
+.gitattributes
+*.log
+*.tmp

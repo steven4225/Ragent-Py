@@ -26,9 +26,17 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# Ship non-.py data files that the runtime loads at request time
+# (e.g. the ecommerce module's static product catalog) inside the
+# installed wheel. Without this declaration setuptools strips them
+# and the Docker image fails at runtime with FileNotFoundError.
+"ragent_python" = ["**/data/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -212,7 +212,78 @@ Ragent-Py/
 
 ## Quick Start
 
-### 1. Python backend
+### Option A — One-command Docker Compose (recommended for a demo)
+
+If you only want to **see** the system running, you don't have to
+install Python or Node locally — Docker is enough.
+
+```bash
+cp .env.docker.example .env.docker     # edit if you want; defaults work
+docker compose up                      # builds + starts web + python-api
+```
+
+Then open <http://localhost:3000>, log in as the demo user (mock auth
+is on by default), and try the chat.
+
+![Ecommerce mode rendered inside the compose stack](docs/img/preview/08-docker-compose-stack.png)
+
+(The screenshot above is the same UI you'd see locally, served by the
+`web` container and talking to `python-api` over the compose bridge —
+no LLM key was configured; the answer text comes from the mock
+generation adapter while the product card grid is rendered from real
+ecommerce-module retrieval results.)
+
+What you get out of the box:
+
+* `web` (Next.js BFF) on `:3000`, the same UI you'd run with `npm run dev`.
+* `python-api` (FastAPI) on `:8000`, including `/internal/chat/*`,
+  `/internal/ecommerce/*`, `/internal/chat/router/*`, and `/healthz`.
+* Mock generation adapter — no OpenAI / DashScope / Anthropic key
+  needed. Chat answers are deterministic mock responses; the
+  ecommerce catalog, retrieval, router, and the streaming protocol
+  are real.
+* The ingestion sqlite store is persisted in a named volume
+  (`ragent_python_data`) so restarts keep state.
+
+Add a vector store (only needed for the qdrant-backed retrieval path):
+
+```bash
+docker compose --profile qdrant up
+```
+
+That brings up a Qdrant container alongside, and the python-api
+container already has `PYTHON_QDRANT_URL=http://qdrant:6333` wired
+on the compose bridge network — you only have to flip
+`PYTHON_RETRIEVAL_BACKEND` to `hybrid` (or `qdrant`) in `.env.docker`.
+
+Wire a real LLM provider (OpenAI / DashScope / vLLM / …):
+
+Edit `.env.docker`:
+
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+PYTHON_LLM_MODEL=qwen-plus
+```
+
+The OpenAI-compatible adapter handles all of these uniformly; there is
+no vendor-specific code path. Restart with `docker compose up -d` to
+apply.
+
+Tear everything down (including the named volumes if you want a fresh
+start) with `docker compose down -v`.
+
+| File                       | Role                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------- |
+| `docker-compose.yml`       | Service graph: `python-api`, `web`, optional `qdrant` (profile-gated).                |
+| `python/Dockerfile`        | Multi-stage Python 3.12-slim build; runtime image ~170 MB, non-root, `HEALTHCHECK`.   |
+| `web/Dockerfile`           | Multi-stage Node 22-alpine build using Next.js `output: "standalone"`; ~220 MB.       |
+| `.env.docker.example`      | Annotated template for `.env.docker` (auth mode, LLM provider, retrieval backend).    |
+| `.env.docker`              | Your local copy (gitignored).                                                         |
+
+### Option B — Run the services locally (recommended for development)
+
+#### 1. Python backend
 
 ```bash
 pip install -e ".[dev]"
@@ -223,7 +294,7 @@ PYTHONPATH=src uvicorn ragent_python.main:app --host 0.0.0.0 --port 8000
 opt-in extras (`llm-openai`, `llm-anthropic`, `llm-ollama`) and stay
 unimported until a provider is wired in.
 
-### 2. Frontend / BFF
+#### 2. Frontend / BFF
 
 ```bash
 cd web
@@ -231,7 +302,7 @@ npm install
 npm run dev
 ```
 
-### 3. Local wiring
+#### 3. Local wiring
 
 ```bash
 RAG_BACKEND=python
