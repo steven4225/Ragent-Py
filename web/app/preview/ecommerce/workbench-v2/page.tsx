@@ -266,6 +266,14 @@ export default function ShopperWorkbenchPage() {
   const [advisor, setAdvisor] = useState<AdvisorState>(INITIAL_ADVISOR);
   const advisorAbortRef = useRef<AbortController | null>(null);
 
+  // Bootstrap pass: read ?task= from the URL once on mount, seed the
+  // filter + advisor query, then unlock the search effect. We gate the
+  // search effect on this flag so that landing on
+  // /preview/ecommerce/workbench-v2?task=work-laptop does not first
+  // fire a useless empty-state search before the URL-driven task takes
+  // over.
+  const [bootstrapped, setBootstrapped] = useState<boolean>(false);
+
   const brands = useMemo(() => {
     const set = new Set<string>();
     for (const block of blocks) set.add(block.brand);
@@ -303,9 +311,30 @@ export default function ShopperWorkbenchPage() {
   );
 
   useEffect(() => {
+    if (bootstrapped) return;
+    const params = new URLSearchParams(window.location.search);
+    const taskId = params.get("task");
+    const entry = taskId
+      ? TASK_ENTRIES.find((candidate) => candidate.id === taskId)
+      : null;
+    if (entry) {
+      setActiveTaskId(entry.id);
+      setTaskSeedQuery(entry.query);
+      setFilter({
+        category: entry.category as EcommerceProductCategory | null,
+        priceBandId: priceBandIdFor(entry.minPrice, entry.maxPrice),
+        brand: null,
+        refine: "",
+      });
+    }
+    setBootstrapped(true);
+  }, [bootstrapped]);
+
+  useEffect(() => {
+    if (!bootstrapped) return;
     void runSearch(filter, taskSeedQuery);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, taskSeedQuery]);
+  }, [bootstrapped, filter, taskSeedQuery]);
 
   const onPickTask = useCallback((entry: TaskEntry) => {
     setActiveTaskId(entry.id);

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, PanelLeft, ShoppingBag, Sparkles } from "lucide-react";
+import { ArrowUpRight, ExternalLink, PanelLeft, ShoppingBag, Sparkles } from "lucide-react";
 
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { ChatMessageList } from "@/components/chat/chat-message-list";
@@ -252,24 +252,33 @@ export function ChatShell({ initialConversationId, user }: Props) {
               </div>
             </div>
             <div className="hidden items-center gap-2 lg:flex">
+              <Link
+                href="/preview/ecommerce/workbench-v2"
+                className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+                title="Open the shopping assistant workbench: candidates + compare + advisor in one view."
+              >
+                <ShoppingBag className="h-3.5 w-3.5" />
+                Shopping assistant
+                <ArrowUpRight className="h-3.5 w-3.5 opacity-90" />
+              </Link>
               <button
                 type="button"
                 onClick={() => setEcommerceMode((current) => !current)}
                 aria-pressed={ecommerceMode}
                 title={
                   ecommerceMode
-                    ? "Ecommerce mode: ON \u2014 routes shopping queries through the ecommerce module's catalog + LLM lane. Click to turn off."
-                    : "Ecommerce mode: OFF \u2014 click to route shopping queries through the ecommerce module's catalog + LLM lane."
+                    ? "In-chat ecommerce router: ON \u2014 next message goes through the catalog + LLM lane. Click to turn off."
+                    : "In-chat ecommerce router: OFF \u2014 click to route the next shopping query through the catalog + LLM lane instead of the default chat lane. For the full workbench, use the Shopping assistant button."
                 }
                 className={[
-                  "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                  "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[11px] font-medium transition",
                   ecommerceMode
                     ? "border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                    : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50",
                 ].join(" ")}
               >
-                <ShoppingBag className="h-3.5 w-3.5" />
-                Ecommerce mode: {ecommerceMode ? "On" : "Off"}
+                <ShoppingBag className="h-3 w-3" />
+                In-chat router: {ecommerceMode ? "On" : "Off"}
               </button>
               <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
                 Tenant {user.tenantId}
