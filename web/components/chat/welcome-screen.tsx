@@ -1,7 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpRight, BookOpen, Bot, Brain, Check, Lightbulb, Send, Square } from "lucide-react";
+import Link from "next/link";
+import {
+  ArrowUpRight,
+  BookOpen,
+  Bot,
+  Brain,
+  Check,
+  Laptop,
+  Lightbulb,
+  Send,
+  Smartphone,
+  Square,
+  Tablet,
+  ShoppingBag,
+} from "lucide-react";
 import { getSampleQuestionReadModel } from "@/lib/client/web-api";
 import type { SampleQuestionReadModel } from "@/lib/contracts";
 
@@ -14,6 +28,38 @@ type PromptPreset = {
 };
 
 const PRESET_ICONS = [BookOpen, Check, Lightbulb];
+
+type ShoppingTaskEntry = {
+  id: string;
+  title: string;
+  description: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+const SHOPPING_TASK_ENTRIES: ShoppingTaskEntry[] = [
+  {
+    id: "work-laptop",
+    title: "工作笔记本推荐",
+    description: "$1500 内能兼顾性能与续航的开发本",
+    href: "/preview/ecommerce/workbench-v2?task=work-laptop",
+    icon: Laptop,
+  },
+  {
+    id: "compare-phones",
+    title: "比较两款手机",
+    description: "按相机 / 屏幕 / 续航并排打分",
+    href: "/preview/ecommerce/workbench-v2?task=compare-phones",
+    icon: Smartphone,
+  },
+  {
+    id: "family-tablet",
+    title: "给父母挑平板",
+    description: "大屏 + 长续航 + 简单上手",
+    href: "/preview/ecommerce/workbench-v2?task=family-tablet",
+    icon: Tablet,
+  },
+];
 
 const DEFAULT_PRESETS: PromptPreset[] = [
   {
@@ -272,6 +318,60 @@ export function WelcomeScreen({ onSend, isStreaming, onCancel }: WelcomeScreenPr
             换行
             {isStreaming ? <span className="ml-2 animate-pulse">生成中...</span> : null}
           </p>
+        </div>
+
+        <div
+          className="mt-10 opacity-0 animate-fade-up"
+          style={{ animationDelay: "140ms", animationFillMode: "both" }}
+        >
+          <div className="rounded-3xl border border-[#C7D2FE] bg-gradient-to-br from-[#EEF2FF] via-white to-[#E0E7FF] p-5 shadow-sm">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#4F46E5] text-white shadow-sm">
+                      <ShoppingBag className="h-3.5 w-3.5" />
+                    </span>
+                    <h2 className="text-base font-semibold text-[#1E1B4B]">购物导购</h2>
+                  </div>
+                  <p className="mt-1 text-xs text-[#4338CA]">
+                    专用工作台：浏览候选 · 对比规格 · 导购建议，全程不写 prompt
+                  </p>
+                </div>
+                <Link
+                  href="/preview/ecommerce/workbench-v2"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#4F46E5] px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#4338CA]"
+                >
+                  进入购物导购
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+              <div className="mt-4 grid gap-2.5 sm:grid-cols-3">
+                {SHOPPING_TASK_ENTRIES.map((task) => {
+                  const TaskIcon = task.icon;
+                  return (
+                    <Link
+                      key={task.id}
+                      href={task.href}
+                      className="group flex flex-col gap-2 rounded-2xl border border-white bg-white/80 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#C7D2FE] hover:bg-white hover:shadow-md"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#EEF2FF] text-[#4F46E5]">
+                          <TaskIcon className="h-3.5 w-3.5" />
+                        </span>
+                        <p className="text-sm font-semibold text-[#1F2937]">{task.title}</p>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-[#4B5563]">{task.description}</p>
+                      <div className="mt-auto inline-flex items-center gap-1 text-[11px] font-medium text-[#4F46E5]">
+                        直达任务流
+                        <ArrowUpRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </div>
 
         <div

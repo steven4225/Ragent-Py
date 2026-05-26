@@ -298,6 +298,23 @@ export default function EcommercePreviewPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-10">
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p>
+            <span className="font-semibold">Internal dev preview.</span>{" "}
+            This page renders the Python ecommerce module&apos;s raw blocks
+            (product_card / spec_compare) against the catalog fixture
+            for debugging. The user-facing shopping experience lives at
+            the workbench.
+          </p>
+          <a
+            href="/preview/ecommerce/workbench-v2"
+            className="inline-flex items-center gap-1.5 rounded-full bg-amber-900 px-3 py-1.5 text-xs font-semibold text-amber-50 transition hover:bg-amber-800"
+          >
+            Open shopping workbench →
+          </a>
+        </div>
+      </div>
       <header className="flex flex-col gap-2">
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
           Module preview
