@@ -2,20 +2,24 @@
 
 import type { ProductCardBlock } from "@/lib/contracts/ecommerce-blocks";
 
+import {
+  TIER_LABEL,
+  TIER_SUBLINE,
+  type RecommendationTier,
+  type TieredCandidate,
+} from "./recommendation";
+
 /**
- * Workbench-specific product card.
+ * Workbench-specific product card and the "candidate main stage" grid.
  *
- * The existing `<ProductCard>` in `components/blocks/` is a faithful
- * renderer of the Python-emitted `ProductCardBlock` shape — it shows
- * the raw `product_id` and is meant for the dev preview surface.
+ * The grid is the page's protagonist. Instead of a flat product list it is
+ * organised into three recommendation tiers — Best fit / Performance pick /
+ * Value pick — borrowed (gestalt only, not look) from Stitch's Decision
+ * Matrix. Any remaining candidates fall into a "More candidates" section so
+ * the shopper still sees the full shortlist without losing the hierarchy.
  *
- * The shopper workbench needs a card that:
- *   - puts "Add to compare" as a first-class action
- *   - shows a category-tinted hero band so a row of cards reads at a
- *     glance, even without real product photos
- *   - hides developer-oriented fields (no `product_id` chip)
- *   - shows a "compare-selected" state so it's obvious which cards
- *     are currently in the right-rail tray
+ * Each card carries a short MATCH badge and a 1-2 sentence "Why it fits"
+ * paragraph that anchors the spec sheet to the active task.
  */
 
 const CATEGORY_TONE: Record<
@@ -59,6 +63,30 @@ const CATEGORY_TONE: Record<
   },
 };
 
+const TIER_ACCENT: Record<
+  RecommendationTier,
+  { ring: string; chip: string; gridSection: string; underline: string }
+> = {
+  "best-fit": {
+    ring: "ring-2 ring-cyan-300/70 border-cyan-300",
+    chip: "bg-cyan-100 text-cyan-900 border-cyan-300",
+    gridSection: "from-cyan-100/80 via-white to-white",
+    underline: "bg-cyan-500",
+  },
+  performance: {
+    ring: "ring-1 ring-indigo-200 border-indigo-200",
+    chip: "bg-indigo-50 text-indigo-800 border-indigo-200",
+    gridSection: "from-indigo-50 via-white to-white",
+    underline: "bg-indigo-500",
+  },
+  value: {
+    ring: "ring-1 ring-emerald-200 border-emerald-200",
+    chip: "bg-emerald-50 text-emerald-800 border-emerald-200",
+    gridSection: "from-emerald-50 via-white to-white",
+    underline: "bg-emerald-500",
+  },
+};
+
 function toneFor(category: string) {
   return CATEGORY_TONE[category] ?? CATEGORY_TONE.laptop;
 }
@@ -72,7 +100,6 @@ function formatPrice(priceUsd: number): string {
 }
 
 function topSpecs(block: ProductCardBlock): { label: string; value: string }[] {
-  // Prefer the two most decision-relevant specs across categories.
   const preferOrder = [
     "Memory",
     "Storage",
@@ -104,28 +131,32 @@ function topSpecs(block: ProductCardBlock): { label: string; value: string }[] {
 }
 
 export function WorkbenchProductCard({
-  block,
+  candidate,
   selected,
   selectionLimitReached,
   onToggleCompare,
   onAskAdvisor,
 }: {
-  block: ProductCardBlock;
+  candidate: TieredCandidate;
   selected: boolean;
   selectionLimitReached: boolean;
   onToggleCompare: (productId: string) => void;
   onAskAdvisor: (block: ProductCardBlock) => void;
 }) {
+  const { block, tier, whyItFits, matchScore } = candidate;
   const tone = toneFor(block.category);
   const specs = topSpecs(block);
   const disabledAdd = !selected && selectionLimitReached;
+  const tierAccent = tier ? TIER_ACCENT[tier] : null;
   return (
     <article
       className={[
-        "group flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition",
+        "group relative flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition",
         selected
-          ? "border-slate-900 ring-2 ring-slate-900/10"
-          : "border-slate-200 hover:border-slate-300 hover:shadow-md",
+          ? "border-slate-950 ring-2 ring-slate-950/15"
+          : tierAccent
+            ? `${tierAccent.ring} hover:shadow-md`
+            : "border-slate-200 hover:border-slate-300 hover:shadow-md",
       ].join(" ")}
     >
       <div className={`relative flex h-20 items-center justify-between px-4 ${tone.band}`}>
@@ -137,7 +168,23 @@ export function WorkbenchProductCard({
         </span>
       </div>
 
+      <span
+        className="absolute right-3 top-[5.5rem] -translate-y-1/2 rounded-md border border-slate-900/10 bg-slate-950/90 px-2 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-200 shadow-sm backdrop-blur"
+        aria-label={`Match score ${matchScore} out of 100`}
+      >
+        {matchScore}/100 match
+      </span>
+
       <div className="flex flex-1 flex-col gap-3 p-4">
+        {tier && tierAccent && (
+          <span
+            className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] ${tierAccent.chip}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${tierAccent.underline}`} />
+            {TIER_LABEL[tier]}
+          </span>
+        )}
+
         <header>
           <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
             {block.brand}
@@ -150,7 +197,7 @@ export function WorkbenchProductCard({
         <p className="text-sm leading-6 text-slate-600">{block.summary}</p>
 
         {specs.length > 0 && (
-          <dl className="mt-auto grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-slate-100 pt-3 text-xs">
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-slate-100 pt-3 text-xs">
             {specs.map((spec) => (
               <div key={spec.label} className="flex flex-col">
                 <dt className="text-[11px] text-slate-400">{spec.label}</dt>
@@ -159,6 +206,20 @@ export function WorkbenchProductCard({
             ))}
           </dl>
         )}
+
+        <div
+          className={[
+            "mt-auto rounded-xl border p-3",
+            tierAccent
+              ? "border-slate-200 bg-slate-50"
+              : "border-slate-100 bg-slate-50/70",
+          ].join(" ")}
+        >
+          <p className="mb-1 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-700">
+            Why it fits
+          </p>
+          <p className="text-[12.5px] leading-snug text-slate-700">{whyItFits}</p>
+        </div>
 
         <div className="flex items-center gap-2 pt-1">
           <button
@@ -181,17 +242,17 @@ export function WorkbenchProductCard({
                     clipRule="evenodd"
                   />
                 </svg>
-                Selected
+                In shortlist
               </>
             ) : (
-              "Add to compare"
+              "Add to shortlist"
             )}
           </button>
           <button
             type="button"
             onClick={() => onAskAdvisor(block)}
             className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-            title="Ask the advisor about this product"
+            title="Ask the decision assistant about this product"
           >
             Why this?
           </button>
@@ -201,22 +262,50 @@ export function WorkbenchProductCard({
   );
 }
 
+function TierHeading({
+  tier,
+  count,
+}: {
+  tier: RecommendationTier;
+  count: number;
+}) {
+  const accent = TIER_ACCENT[tier];
+  return (
+    <div className={`mb-3 rounded-xl border border-slate-200 bg-gradient-to-r ${accent.gridSection} px-4 py-3`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className={`inline-block h-2.5 w-2.5 rounded-full ${accent.underline}`} aria-hidden />
+          <h3 className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-950">
+            {TIER_LABEL[tier]}
+          </h3>
+          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">
+            · {count} {count === 1 ? "card" : "cards"}
+          </span>
+        </div>
+      </div>
+      <p className="mt-1 text-[12.5px] leading-snug text-slate-600">
+        {TIER_SUBLINE[tier]}
+      </p>
+    </div>
+  );
+}
+
 export function ProductGrid({
-  blocks,
+  candidates,
   selectedIds,
   selectionLimit,
   onToggleCompare,
   onAskAdvisor,
   isLoading,
 }: {
-  blocks: ProductCardBlock[];
+  candidates: TieredCandidate[];
   selectedIds: string[];
   selectionLimit: number;
   onToggleCompare: (productId: string) => void;
   onAskAdvisor: (block: ProductCardBlock) => void;
   isLoading: boolean;
 }) {
-  if (isLoading && blocks.length === 0) {
+  if (isLoading && candidates.length === 0) {
     return (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {Array.from({ length: 6 }).map((_, idx) => (
@@ -228,10 +317,10 @@ export function ProductGrid({
       </div>
     );
   }
-  if (blocks.length === 0) {
+  if (candidates.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
-        <p className="text-base font-semibold text-slate-900">No matches yet</p>
+        <p className="text-base font-semibold text-slate-900">Nothing in the shortlist yet</p>
         <p className="max-w-sm text-sm text-slate-500">
           Try widening the budget, switching the category to{" "}
           <span className="font-medium">Any</span>, or picking a different task above.
@@ -239,19 +328,74 @@ export function ProductGrid({
       </div>
     );
   }
+
   const selectionLimitReached = selectedIds.length >= selectionLimit;
+
+  const tiered: Record<RecommendationTier, TieredCandidate[]> = {
+    "best-fit": [],
+    performance: [],
+    value: [],
+  };
+  const others: TieredCandidate[] = [];
+  for (const candidate of candidates) {
+    if (candidate.tier) {
+      tiered[candidate.tier].push(candidate);
+    } else {
+      others.push(candidate);
+    }
+  }
+
+  const renderTier = (tier: RecommendationTier) => {
+    const items = tiered[tier];
+    if (items.length === 0) return null;
+    return (
+      <section key={tier} aria-label={TIER_LABEL[tier]}>
+        <TierHeading tier={tier} count={items.length} />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {items.map((candidate) => (
+            <WorkbenchProductCard
+              key={candidate.block.product_id}
+              candidate={candidate}
+              selected={selectedIds.includes(candidate.block.product_id)}
+              selectionLimitReached={selectionLimitReached}
+              onToggleCompare={onToggleCompare}
+              onAskAdvisor={onAskAdvisor}
+            />
+          ))}
+        </div>
+      </section>
+    );
+  };
+
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {blocks.map((block) => (
-        <WorkbenchProductCard
-          key={block.product_id}
-          block={block}
-          selected={selectedIds.includes(block.product_id)}
-          selectionLimitReached={selectionLimitReached}
-          onToggleCompare={onToggleCompare}
-          onAskAdvisor={onAskAdvisor}
-        />
-      ))}
+    <div className="flex flex-col gap-6">
+      {renderTier("best-fit")}
+      {renderTier("performance")}
+      {renderTier("value")}
+      {others.length > 0 && (
+        <section aria-label="More candidates">
+          <div className="mb-3 flex items-baseline gap-3 border-t border-slate-200 pt-4">
+            <h3 className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-700">
+              More candidates
+            </h3>
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-slate-500">
+              · {others.length} more in shortlist
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {others.map((candidate) => (
+              <WorkbenchProductCard
+                key={candidate.block.product_id}
+                candidate={candidate}
+                selected={selectedIds.includes(candidate.block.product_id)}
+                selectionLimitReached={selectionLimitReached}
+                onToggleCompare={onToggleCompare}
+                onAskAdvisor={onAskAdvisor}
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

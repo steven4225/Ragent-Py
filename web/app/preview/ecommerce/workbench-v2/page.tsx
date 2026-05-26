@@ -9,6 +9,14 @@ import {
 } from "@/components/ecommerce/workbench/compare-tray";
 import { FilterSidebar } from "@/components/ecommerce/workbench/filter-sidebar";
 import { ProductGrid } from "@/components/ecommerce/workbench/product-grid";
+import {
+  classifyCandidates,
+  type TieredCandidate,
+} from "@/components/ecommerce/workbench/recommendation";
+import {
+  StageIndicator,
+  type WorkbenchStage,
+} from "@/components/ecommerce/workbench/stage-indicator";
 import { TaskEntries } from "@/components/ecommerce/workbench/task-entries";
 import type {
   AdvisorState,
@@ -26,30 +34,29 @@ import type {
 } from "@/lib/contracts/ecommerce-blocks";
 
 /**
- * Shopper workbench (v2 preview).
+ * Shopper decision workbench.
  *
- * The old `/preview/ecommerce` page is a faithful dev preview of the
- * Python-side ecommerce module — it shows raw block ids, exposes the
- * internal endpoint names, and treats the search bar as the page's
- * starting point. That reads as "a chat system with shopping bits
- * bolted on".
+ * Page protagonist is the candidate shortlist + the spec-table comparison —
+ * not a chat box, not an AI console. The workbench reads top-down as:
  *
- * This page is a deliberate redesign of just the front-end: the same
- * `/api/preview/ecommerce/*` endpoints, the same `SpecCompareTable`
- * primitive, but the information architecture is shopper-first:
+ *   1. Header — current task title, stage indicator (Explore / Compare /
+ *      Decide), and a quick status pill so the shopper always knows where
+ *      they are in the decision flow.
+ *   2. Task entries — 6 starting points that seed the task + filters in
+ *      one tap.
+ *   3. Left rail — Active task + Active filters + Refine controls.
+ *   4. Centre — candidate main stage with recommendation tiers
+ *      (Best fit / Performance pick / Value pick) and a "Why it fits"
+ *      line on every card.
+ *   5. Right rail — Decision core (shortlist + side-by-side spec table)
+ *      and a Decision assistant that explains trade-offs anchored to the
+ *      shortlist.
  *
- *   1. Hero strip of concrete shopping tasks (no empty input).
- *   2. Left rail = facet filters (chips, not <select>s).
- *   3. Center = candidate product grid (always visible).
- *   4. Right rail (top) = compare tray (decision aid is a first-class
- *      action; spec table renders inline once Compare runs).
- *   5. Right rail (bottom) = AI advisor (explains the picks, doesn't
- *      try to be the page's center of gravity).
- *
- * Does NOT touch `services/chat_service`, the main `/api/chat`
- * pipeline, the main chat UI, or any backend code. Reuses
- * `ProductCardBlock` / `SpecCompareBlock` shapes and existing
- * `SpecCompareTable` primitive.
+ * The wire layer is intentionally untouched: same
+ * `/api/preview/ecommerce/{search,compare,chat/stream}` endpoints, same
+ * `ProductCardBlock` / `SpecCompareBlock` shapes, same `SpecCompareTable`
+ * primitive. The upgrade is purely presentational — Python, the main chat
+ * service, and `/api/chat/*` are not touched.
  */
 
 const PRICE_BANDS: readonly PriceBand[] = [
@@ -280,6 +287,26 @@ export default function ShopperWorkbenchPage() {
     return Array.from(set).sort();
   }, [blocks]);
 
+  const activeTask = useMemo(
+    () => TASK_ENTRIES.find((entry) => entry.id === activeTaskId) ?? null,
+    [activeTaskId],
+  );
+
+  const activeBand = useMemo(
+    () => activePriceBand(filter.priceBandId),
+    [filter.priceBandId],
+  );
+
+  const candidates: TieredCandidate[] = useMemo(
+    () =>
+      classifyCandidates(
+        blocks,
+        activeTask?.title ?? null,
+        activeBand.max ?? activeTask?.maxPrice ?? null,
+      ),
+    [blocks, activeTask, activeBand],
+  );
+
   const runSearch = useCallback(
     async (currentFilter: FilterState, seed: string) => {
       setIsSearching(true);
@@ -501,21 +528,103 @@ export default function ShopperWorkbenchPage() {
     };
   }, []);
 
+  const stage: WorkbenchStage = useMemo(() => {
+    if (compareBlock) return "decide";
+    if (selectedIds.length >= 2) return "compare";
+    return "explore";
+  }, [compareBlock, selectedIds.length]);
+
+  const isBusy =
+    isSearching || isComparing || advisor.status === "streaming";
+  const busyLabel = isComparing
+    ? "Building spec table"
+    : advisor.status === "streaming"
+      ? "Decision assistant thinking"
+      : isSearching
+        ? "Reading the catalog"
+        : null;
+
+  const candidateSummary = activeTask
+    ? `Top picks for ${activeTask.title.toLowerCase()}.`
+    : filter.category
+      ? `Top picks across ${filter.category}s.`
+      : "Top picks across the catalog.";
+
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
+    <main className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-6 py-8">
-        <header className="flex flex-col gap-1">
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-            Shopper workbench · v2
-          </p>
-          <h1 className="text-2xl font-semibold text-slate-950">
-            Shop the 3C catalog with an AI advisor
-          </h1>
-          <p className="max-w-3xl text-sm leading-6 text-slate-600">
-            Pick a task to seed the candidates, narrow them down with chips,
-            select up to {SELECTION_LIMIT} products to compare, and let the
-            advisor explain the trade-offs.
-          </p>
+        <header className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div className="flex flex-col gap-1.5">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-700">
+                Shopper decision workbench
+              </p>
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
+                {activeTask
+                  ? activeTask.title
+                  : "What are you shopping for today?"}
+              </h1>
+              <p className="max-w-3xl text-sm leading-6 text-slate-600">
+                {activeTask
+                  ? activeTask.subtitle
+                  : `Pick a task to seed the shortlist, narrow it with chips, hold up to ${SELECTION_LIMIT} picks side-by-side, and let the assistant explain the trade-offs.`}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                className={[
+                  "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.18em]",
+                  isBusy
+                    ? "border-cyan-300 bg-cyan-50 text-cyan-800"
+                    : "border-slate-200 bg-slate-50 text-slate-500",
+                ].join(" ")}
+                aria-live="polite"
+              >
+                <span
+                  aria-hidden
+                  className={[
+                    "relative inline-flex h-2 w-2 rounded-full",
+                    isBusy ? "bg-cyan-500" : "bg-slate-300",
+                  ].join(" ")}
+                >
+                  {isBusy && (
+                    <span className="absolute inset-0 animate-ping rounded-full bg-cyan-400/70" />
+                  )}
+                </span>
+                {busyLabel ?? "Idle"}
+              </span>
+            </div>
+          </div>
+
+          {activeTask && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                Active task
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-700">
+                <span className="text-slate-500">Category:</span>
+                <span className="text-slate-900">{activeTask.category ?? "any"}</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-700">
+                <span className="text-slate-500">Budget:</span>
+                <span className="text-slate-900">{activeBand.label}</span>
+              </span>
+              {filter.brand && (
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-700">
+                  <span className="text-slate-500">Brand:</span>
+                  <span className="text-slate-900">{filter.brand}</span>
+                </span>
+              )}
+              {filter.refine.trim() && (
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-slate-50 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-700">
+                  <span className="text-slate-500">Refine:</span>
+                  <span className="text-slate-900">{filter.refine.trim()}</span>
+                </span>
+              )}
+            </div>
+          )}
+
+          <StageIndicator stage={stage} />
         </header>
 
         <TaskEntries
@@ -539,26 +648,55 @@ export default function ShopperWorkbenchPage() {
             onClear={onClearFilter}
             visibleCount={blocks.length}
             totalCount={totalCount}
+            activeTaskTitle={activeTask?.title ?? null}
+            activeTaskSubtitle={activeTask?.subtitle ?? null}
           />
 
-          <div className="flex flex-col gap-3">
-            <div className="flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold text-slate-950">
-                Candidates
-                <span className="ml-2 text-xs font-normal text-slate-500">
-                  {isSearching
-                    ? "Loading…"
-                    : `${blocks.length} shown · ${totalCount} matched`}
-                </span>
-              </h2>
-              {activeTaskId && (
-                <span className="rounded-full bg-slate-900 px-2.5 py-0.5 text-[11px] font-medium text-white">
-                  Task: {TASK_ENTRIES.find((t) => t.id === activeTaskId)?.title}
-                </span>
-              )}
+          <div className="flex flex-col gap-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-baseline justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-700">
+                    Candidates · main stage
+                  </span>
+                  <span
+                    aria-hidden
+                    className="inline-block h-1.5 w-1.5 rounded-full bg-cyan-500"
+                  />
+                  <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
+                    {isSearching
+                      ? "refreshing shortlist…"
+                      : `${blocks.length} on stage · ${totalCount} matched`}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeTask && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-950 px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-300">
+                      Task · {activeTask.title}
+                    </span>
+                  )}
+                  {!activeTask && filter.category && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-700">
+                      Category · {filter.category}
+                    </span>
+                  )}
+                  <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-2.5 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-700">
+                    Budget · {activeBand.label}
+                  </span>
+                </div>
+              </div>
+              <p className="mt-2 text-[12.5px] leading-snug text-slate-600">
+                {candidateSummary} Tiers are derived from price and spec balance — the
+                <span className="font-semibold text-slate-800"> Best fit</span> card is
+                the recommended starting point, then
+                <span className="font-semibold text-slate-800"> Performance pick</span>{" "}
+                and
+                <span className="font-semibold text-slate-800"> Value pick</span> show the
+                trade-off either way.
+              </p>
             </div>
             <ProductGrid
-              blocks={blocks}
+              candidates={candidates}
               selectedIds={selectedIds}
               selectionLimit={SELECTION_LIMIT}
               onToggleCompare={onToggleCompare}
