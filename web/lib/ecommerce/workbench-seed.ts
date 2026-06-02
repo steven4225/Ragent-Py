@@ -131,6 +131,10 @@ export function seedUrlForTask(taskId: string): string {
   return `/preview/ecommerce/workbench-v2?task=${encodeURIComponent(taskId)}`;
 }
 
+export function seedUrlForTaskV3(taskId: string): string {
+  return `/preview/ecommerce/workbench-v3?task=${encodeURIComponent(taskId)}`;
+}
+
 export function stageForWorkbenchState(
   selectedCount: number,
   hasDecisionOutput: boolean,
