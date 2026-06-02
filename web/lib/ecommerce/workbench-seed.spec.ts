@@ -11,6 +11,13 @@ test("seedUrlForTaskV3 builds a workbench-v3 route with the task query param", (
   );
 });
 
+test("seedUrlForTaskV3 URL-encodes task ids", () => {
+  assert.equal(
+    seedUrlForTaskV3("phone & tablet"),
+    "/preview/ecommerce/workbench-v3?task=phone%20%26%20tablet",
+  );
+});
+
 test("legacy v2 seed URL remains unchanged", () => {
   assert.equal(
     seedUrlForTask("compare-phones"),
