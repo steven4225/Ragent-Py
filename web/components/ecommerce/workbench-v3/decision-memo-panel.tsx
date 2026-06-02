@@ -52,6 +52,16 @@ export function DecisionMemoPanel({
           </p>
           <p className="mt-2 text-sm leading-6 text-slate-900">{memo.revisitWhen}</p>
         </section>
+        {advisor?.text.trim() ? (
+          <section className="px-4 py-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+              Advisor note
+            </p>
+            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">
+              {advisor.text}
+            </p>
+          </section>
+        ) : null}
       </div>
 
       {advisor ? (
