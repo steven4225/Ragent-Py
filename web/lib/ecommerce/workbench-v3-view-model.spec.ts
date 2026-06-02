@@ -79,6 +79,7 @@ test("buildIntentInterpretation turns a brief into advisor-facing intent fields"
 test("buildPrimaryVerdict picks the first block as the current winner and exposes the downside", () => {
   const verdict = buildPrimaryVerdict(sampleBlocks, "coding and calls");
 
+  assert.ok(verdict.winner);
   assert.equal(verdict.winner.product_id, "a");
   assert.match(verdict.why, /Alpha Book/);
   assert.match(verdict.why, /coding and calls/);
