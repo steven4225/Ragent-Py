@@ -8,7 +8,7 @@ export type IntentInterpretation = {
 };
 
 export type PrimaryVerdict = {
-  winner: ProductCardBlock;
+  winner: ProductCardBlock | null;
   why: string;
   notIdealFor: string;
   mainTradeoff: string;
@@ -16,7 +16,7 @@ export type PrimaryVerdict = {
 
 export type AlternativeLane = {
   lane: "Save money" | "Push performance";
-  block: ProductCardBlock;
+  block: ProductCardBlock | null;
   why: string;
 };
 
@@ -44,10 +44,12 @@ export function buildPrimaryVerdict(
   blocks: ProductCardBlock[],
   brief: string,
 ): PrimaryVerdict {
-  const winner = blocks[0];
+  const winner = blocks[0] ?? null;
   return {
     winner,
-    why: `${winner.name} is the most balanced answer for ${brief}.`,
+    why: winner
+      ? `${winner.name} is the most balanced answer for ${brief}.`
+      : `No current winner is available yet for ${brief}.`,
     notIdealFor: "Users who care more about max raw performance than everyday balance.",
     mainTradeoff: "You are accepting a balanced all-round pick instead of pushing one dimension to the limit.",
   };
@@ -57,15 +59,16 @@ export function buildAlternativeLanes(
   blocks: ProductCardBlock[],
   brief: string,
 ): AlternativeLane[] {
+  const fallback = blocks[0] ?? null;
   return [
     {
       lane: "Save money",
-      block: blocks[1] ?? blocks[0],
+      block: blocks[1] ?? fallback,
       why: `Choose this if ${brief} still matters, but total spend matters more than polish.`,
     },
     {
       lane: "Push performance",
-      block: blocks[2] ?? blocks[0],
+      block: blocks[2] ?? fallback,
       why: `Choose this if you are willing to pay more to improve headroom for the same brief.`,
     },
   ];

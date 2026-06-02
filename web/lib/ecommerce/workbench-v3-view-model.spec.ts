@@ -20,6 +20,7 @@ const sampleBlocks: ProductCardBlock[] = [
     price_usd: 1299,
     summary: "Balanced coding laptop",
     image_url: "/alpha.svg",
+    release_year: 2025,
     specs: [
       { label: "Memory", value: "16GB" },
       { label: "Storage", value: "512GB" },
@@ -36,6 +37,7 @@ const sampleBlocks: ProductCardBlock[] = [
     price_usd: 999,
     summary: "Lower-cost option",
     image_url: "/budget.svg",
+    release_year: 2024,
     specs: [
       { label: "Memory", value: "16GB" },
       { label: "Storage", value: "512GB" },
@@ -52,6 +54,7 @@ const sampleBlocks: ProductCardBlock[] = [
     price_usd: 1499,
     summary: "Higher-performance option",
     image_url: "/power.svg",
+    release_year: 2025,
     specs: [
       { label: "Memory", value: "32GB" },
       { label: "Storage", value: "1024GB" },
@@ -77,7 +80,8 @@ test("buildPrimaryVerdict picks the first block as the current winner and expose
   const verdict = buildPrimaryVerdict(sampleBlocks, "coding and calls");
 
   assert.equal(verdict.winner.product_id, "a");
-  assert.match(verdict.why, /balanced/i);
+  assert.match(verdict.why, /Alpha Book/);
+  assert.match(verdict.why, /coding and calls/);
   assert.ok(verdict.notIdealFor.length > 0);
   assert.ok(verdict.mainTradeoff.length > 0);
 });
@@ -87,5 +91,26 @@ test("buildAlternativeLanes keeps only a save-money and performance lane", () =>
 
   assert.equal(lanes.length, 2);
   assert.equal(lanes[0].lane, "Save money");
+  assert.equal(lanes[0].block?.product_id, "b");
   assert.equal(lanes[1].lane, "Push performance");
+  assert.equal(lanes[1].block?.product_id, "c");
+});
+
+test("view-model helpers degrade safely when the product list is empty", () => {
+  const verdict = buildPrimaryVerdict([], "coding and calls");
+  const lanes = buildAlternativeLanes([], "coding and calls");
+
+  assert.equal(verdict.winner, null);
+  assert.match(verdict.why, /coding and calls/);
+  assert.equal(lanes.length, 2);
+  assert.equal(lanes[0].block, null);
+  assert.equal(lanes[1].block, null);
+});
+
+test("buildAlternativeLanes falls back to the first product when controlled alternatives are missing", () => {
+  const lanes = buildAlternativeLanes(sampleBlocks.slice(0, 1), "coding and calls");
+
+  assert.equal(lanes.length, 2);
+  assert.equal(lanes[0].block?.product_id, "a");
+  assert.equal(lanes[1].block?.product_id, "a");
 });
