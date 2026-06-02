@@ -21,8 +21,12 @@ export function TradeoffCompareBoard({
           Trade-off compare
         </p>
         <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-          Justify the verdict before opening the full spec wall.
+          Explain why one option should win.
         </h3>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+          This section exists to defend the recommendation, not to overwhelm the user with every
+          possible parameter at once.
+        </p>
       </div>
 
       {hasHighlights ? (
@@ -58,7 +62,7 @@ export function TradeoffCompareBoard({
         </div>
       ) : (
         <div className="border-b border-slate-200 px-4 py-5 text-sm leading-6 text-slate-600">
-          Compare two shortlisted products to surface the real trade-off.
+          Compare the recommendation against one challenger to surface the real trade-off.
         </div>
       )}
 

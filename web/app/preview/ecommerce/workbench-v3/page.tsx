@@ -79,9 +79,11 @@ async function postSearch(payload: {
       limit: payload.limit,
     }),
   });
+
   if (!response.ok) {
     throw new Error(`Search failed (${response.status})`);
   }
+
   return (await response.json()) as EcommerceSearchResponse;
 }
 
@@ -91,9 +93,11 @@ async function postCompare(productIds: string[]): Promise<EcommerceCompareRespon
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ product_ids: productIds }),
   });
+
   if (!response.ok) {
     throw new Error(`Compare failed (${response.status})`);
   }
+
   return (await response.json()) as EcommerceCompareResponse;
 }
 
@@ -132,10 +136,12 @@ async function streamAdvisor(options: {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+
       let newlineIndex = buffer.indexOf("\n");
       while (newlineIndex >= 0) {
         const line = buffer.slice(0, newlineIndex).trim();
         buffer = buffer.slice(newlineIndex + 1);
+
         if (line.length > 0) {
           try {
             const event = JSON.parse(line) as EcommerceChatStreamEvent;
@@ -151,12 +157,13 @@ async function streamAdvisor(options: {
             // Ignore malformed event lines from the preview stream.
           }
         }
+
         newlineIndex = buffer.indexOf("\n");
       }
     }
   } catch (caught) {
     if ((caught as { name?: string })?.name === "AbortError") return;
-    options.onError(caught instanceof Error ? caught.message : "Advisor stream failed.");
+    options.onError(caught instanceof Error ? caught.message : "Decision note failed.");
   }
 }
 
@@ -168,11 +175,13 @@ async function streamLocalAdvisor(options: {
 }): Promise<void> {
   const text = localRecommendationText(options.query);
   const chunks = text.match(/.{1,80}(\s|$)/g) ?? [text];
+
   for (const chunk of chunks) {
     if (options.signal.aborted) return;
     options.onDelta(chunk);
     await new Promise((resolve) => setTimeout(resolve, 24));
   }
+
   options.onDone({ provider: "local_decision_engine", model: "fallback-catalog" });
 }
 
@@ -193,6 +202,7 @@ function toFilterCategory(value: string | null): FilterState["category"] {
   ) {
     return value;
   }
+
   return null;
 }
 
@@ -399,27 +409,50 @@ export default function ShopperWorkbenchV3Page() {
       }
 
       void askAdvisor(
-        `Compare ${winner.name} and ${candidate.name} for "${workingBrief}". Explain the real trade-off and confirm which one should win.`,
+        `Compare ${winner.name} and ${candidate.name} for "${workingBrief}". Explain the trade-off and confirm which one better fits the brief.`,
       );
     },
     [askAdvisor, rememberBlocks, verdict.winner, workingBrief],
   );
 
+  const submitBrief = useCallback(
+    (nextBrief: string) => {
+      const normalized = nextBrief.trim();
+      if (!normalized) return;
+
+      const nextParsed = parseBrief(normalized);
+      const nextFilter: FilterState = {
+        ...filter,
+        category: toFilterCategory(nextParsed.category) ?? filter.category,
+      };
+
+      setActiveTaskId(null);
+      setFilter(nextFilter);
+      setDraftBrief(normalized);
+      setCommittedBrief(normalized);
+      void runSearch(nextFilter, normalized);
+    },
+    [filter, runSearch],
+  );
+
   const onSubmitBrief = useCallback(() => {
-    const nextBrief = draftBrief.trim();
-    if (!nextBrief) return;
+    submitBrief(draftBrief);
+  }, [draftBrief, submitBrief]);
 
-    const nextParsed = parseBrief(nextBrief);
-    const nextFilter: FilterState = {
-      ...filter,
-      category: toFilterCategory(nextParsed.category) ?? filter.category,
-    };
+  const onPickReference = useCallback(
+    (taskId: string) => {
+      const task = getWorkbenchTaskById(taskId);
+      if (!task) return;
 
-    setActiveTaskId(null);
-    setFilter(nextFilter);
-    setCommittedBrief(nextBrief);
-    void runSearch(nextFilter, nextBrief);
-  }, [draftBrief, filter, runSearch]);
+      const nextFilter = seedFilterFromTask(task);
+      setActiveTaskId(task.id);
+      setFilter(nextFilter);
+      setDraftBrief(task.query);
+      setCommittedBrief(task.query);
+      void runSearch(nextFilter, task.query);
+    },
+    [runSearch],
+  );
 
   useEffect(() => {
     if (bootstrapped) return;
@@ -443,14 +476,21 @@ export default function ShopperWorkbenchV3Page() {
   }, []);
 
   const dataModeLabel =
-    dataMode === "backend" ? "Connected to backend API" : "Using local demo catalog";
+    dataMode === "backend" ? "Backend catalog" : "Local fallback catalog";
 
-  const activeTaskTitle =
-    WORKBENCH_TASKS.find((task) => task.id === activeTaskId)?.title ?? "Open advisor brief";
+  const referenceBriefs = useMemo(
+    () =>
+      WORKBENCH_TASKS.map((task) => ({
+        id: task.id,
+        title: task.title,
+        subtitle: task.subtitle,
+      })),
+    [],
+  );
 
   return (
-    <main className="min-h-screen bg-[#f3f1eb] text-slate-950">
-      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-[#f1eee6] text-slate-950">
+      <div className="mx-auto flex w-full max-w-[1380px] flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
         {searchError ? (
           <div className="border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {searchError}
@@ -463,70 +503,72 @@ export default function ShopperWorkbenchV3Page() {
           useCase={parsedBrief.useCase}
           mustHaves={parsedBrief.mustHaves}
           niceToHaves={parsedBrief.niceToHaves}
+          warnings={parsedBrief.warnings}
           disabled={isSearching}
           dataModeLabel={dataModeLabel}
+          referenceBriefs={referenceBriefs}
+          activeReferenceId={activeTaskId}
           onBriefChange={setDraftBrief}
           onSubmit={onSubmitBrief}
+          onPickReference={onPickReference}
         />
 
         <IntentInterpretationStrip {...intent} />
 
-        <section className="border border-slate-200 bg-white px-4 py-3">
-          <div className="grid gap-3 md:grid-cols-4">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Flow stage
-              </p>
-              <p className="mt-2 text-sm text-slate-950">{currentStage}</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Active task
-              </p>
-              <p className="mt-2 text-sm text-slate-950">{activeTaskTitle}</p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Candidate pool
-              </p>
-              <p className="mt-2 text-sm text-slate-950">
-                {isSearching ? "Refreshing…" : `${blocks.length} shown / ${totalCount} matched`}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Compare state
-              </p>
-              <p className="mt-2 text-sm text-slate-950">
-                {selectedBlocks.length >= 2
-                  ? `${selectedBlocks[0].name} vs ${selectedBlocks[1].name}`
-                  : "No active trade-off selected yet"}
-              </p>
-            </div>
-          </div>
-        </section>
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_360px]">
+          <PrimaryVerdictPanel
+            verdict={verdict}
+            onInspectCompare={() => void runCompare(lanes[0]?.block ?? null)}
+            onInspectAlternatives={() => setCatalogOpen(true)}
+          />
+          <DecisionMemoPanel memo={memo} />
+        </div>
 
-        <PrimaryVerdictPanel
-          verdict={verdict}
-          onInspectCompare={() => void runCompare(lanes[0]?.block ?? null)}
-          onInspectAlternatives={() => setCatalogOpen(true)}
-        />
-
-        <AlternativeLanes lanes={lanes} onChooseLane={(lane) => void runCompare(lane.block)} />
-
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_380px]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <AlternativeLanes
+            lanes={lanes}
+            onChooseLane={(lane) => void runCompare(lane.block)}
+          />
           <TradeoffCompareBoard
             highlights={compareHighlights}
             compareBlock={compareBlock}
           />
-          <DecisionMemoPanel memo={memo} advisor={advisor} />
         </div>
 
         <CatalogDrawer
           open={catalogOpen}
           onToggle={() => setCatalogOpen((current) => !current)}
-          summary="Keep the wider catalog below the decision flow. Use it to challenge the winner, not to restart from zero."
+          summary="Use the wider field to challenge the current recommendation, not to restart from zero."
         >
+          <div className="border-b border-slate-200 pb-3">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  Candidate pool
+                </p>
+                <p className="mt-2 text-sm text-slate-950">
+                  {isSearching ? "Refreshing the shortlist..." : `${blocks.length} shown / ${totalCount} matched`}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  Compare state
+                </p>
+                <p className="mt-2 text-sm text-slate-950">
+                  {selectedBlocks.length >= 2
+                    ? `${selectedBlocks[0].name} vs ${selectedBlocks[1].name}`
+                    : "No active trade-off selected yet"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                  Flow stage
+                </p>
+                <p className="mt-2 text-sm text-slate-950">{currentStage}</p>
+              </div>
+            </div>
+          </div>
+
           <div className="divide-y divide-slate-200">
             {blocks.map((block) => {
               const isWinner = verdict.winner?.product_id === block.product_id;
@@ -540,13 +582,12 @@ export default function ShopperWorkbenchV3Page() {
                       <h3 className="text-lg font-semibold tracking-tight text-slate-950">
                         {block.name}
                       </h3>
-                      <span className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                         {block.brand}
                       </span>
                     </div>
                     <p className="mt-1 text-sm text-slate-600">
-                      {block.category} • ${block.price_usd.toLocaleString("en-US")} •{" "}
-                      {block.release_year}
+                      {block.category} / ${block.price_usd.toLocaleString("en-US")} / {block.release_year}
                     </p>
                     <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700">
                       {block.summary}
@@ -562,12 +603,13 @@ export default function ShopperWorkbenchV3Page() {
                       ))}
                     </div>
                   </div>
+
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => void runCompare(block)}
                       disabled={isWinner || isComparing}
-                      className="border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-950 hover:text-slate-950 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+                      className="border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:border-slate-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
                     >
                       {isWinner ? "Current winner" : "Compare with winner"}
                     </button>

@@ -1,76 +1,55 @@
-import type { AdvisorState } from "@/components/ecommerce/workbench/types";
 import type { DecisionMemo } from "@/lib/ecommerce/workbench-v3-view-model";
 
 type DecisionMemoPanelProps = {
   memo: DecisionMemo;
-  advisor?: AdvisorState | null;
 };
 
 export function DecisionMemoPanel({
   memo,
-  advisor,
 }: DecisionMemoPanelProps) {
   return (
-    <aside className="border border-slate-200 bg-white">
+    <aside className="border border-slate-200 bg-[#fcfaf4]">
       <div className="border-b border-slate-200 px-4 py-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
           Decision memo
         </p>
-        <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-          A rational close, not a chat transcript.
-        </h3>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          A defended recommendation in plain buying language.
+        </p>
       </div>
 
       <div className="divide-y divide-slate-200">
         <section className="px-4 py-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
             Recommendation
           </p>
-          <p className="mt-2 text-sm leading-6 text-slate-900">{memo.recommendation}</p>
+          <p className="mt-2 text-sm leading-7 text-slate-900">{memo.recommendation}</p>
         </section>
         <section className="px-4 py-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Buy if
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+            Buy this if
           </p>
-          <p className="mt-2 text-sm leading-6 text-slate-900">{memo.buyIf}</p>
+          <p className="mt-2 text-sm leading-7 text-slate-900">{memo.buyIf}</p>
         </section>
         <section className="px-4 py-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Avoid if
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+            Avoid this if
           </p>
-          <p className="mt-2 text-sm leading-6 text-slate-900">{memo.avoidIf}</p>
+          <p className="mt-2 text-sm leading-7 text-slate-900">{memo.avoidIf}</p>
         </section>
         <section className="px-4 py-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
             Main trade-off
           </p>
-          <p className="mt-2 text-sm leading-6 text-slate-900">{memo.tradeOff}</p>
+          <p className="mt-2 text-sm leading-7 text-slate-900">{memo.tradeOff}</p>
         </section>
         <section className="px-4 py-4">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Revisit when
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+            If priorities change
           </p>
-          <p className="mt-2 text-sm leading-6 text-slate-900">{memo.revisitWhen}</p>
+          <p className="mt-2 text-sm leading-7 text-slate-900">{memo.revisitWhen}</p>
         </section>
-        {advisor?.text.trim() ? (
-          <section className="px-4 py-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-              Advisor note
-            </p>
-            <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">
-              {advisor.text}
-            </p>
-          </section>
-        ) : null}
       </div>
-
-      {advisor ? (
-        <footer className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-          Advisor state: {advisor.status}
-          {advisor.provider ? ` • ${advisor.provider}` : ""}
-          {advisor.model ? ` • ${advisor.model}` : ""}
-        </footer>
-      ) : null}
     </aside>
   );
 }
