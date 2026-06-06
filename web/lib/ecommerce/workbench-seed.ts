@@ -42,18 +42,18 @@ export interface WorkbenchFilterSeed {
 export type WorkbenchStage = "explore" | "compare" | "decide";
 
 export const WORKBENCH_PRICE_BANDS: readonly WorkbenchPriceBand[] = [
-  { id: "any", label: "Any" },
-  { id: "lt500", label: "< $500", max: 500 },
-  { id: "500-1000", label: "$500-$1000", min: 500, max: 1000 },
-  { id: "1000-1500", label: "$1000-$1500", min: 1000, max: 1500 },
-  { id: "1500-plus", label: "$1500+", min: 1500 },
+  { id: "any", label: "不限" },
+  { id: "lt500", label: "500 美元以下", max: 500 },
+  { id: "500-1000", label: "500-1000 美元", min: 500, max: 1000 },
+  { id: "1000-1500", label: "1000-1500 美元", min: 1000, max: 1500 },
+  { id: "1500-plus", label: "1500 美元以上", min: 1500 },
 ];
 
 export const WORKBENCH_TASKS: readonly WorkbenchTaskEntry[] = [
   {
     id: "work-laptop",
-    title: "Work laptop under $1500",
-    subtitle: "Reliable everyday machine for code, docs, and calls.",
+    title: "1500 美元内办公本",
+    subtitle: "适合写代码、文档处理和视频会议的稳妥日用机器。",
     category: "laptop",
     maxPrice: 1500,
     query: "work laptop under $1500 with at least 16GB RAM and good battery",
@@ -61,8 +61,8 @@ export const WORKBENCH_TASKS: readonly WorkbenchTaskEntry[] = [
   },
   {
     id: "premium-phone",
-    title: "Premium phone",
-    subtitle: "Top-tier camera and display for daily use.",
+    title: "高端手机",
+    subtitle: "适合日常使用的顶级相机和屏幕体验。",
     category: "phone",
     minPrice: 700,
     query: "premium phone with great camera and OLED display",
@@ -70,16 +70,16 @@ export const WORKBENCH_TASKS: readonly WorkbenchTaskEntry[] = [
   },
   {
     id: "family-tablet",
-    title: "Tablet for parents",
-    subtitle: "Easy reading, video calls, and a big screen.",
+    title: "给父母的平板",
+    subtitle: "适合阅读、视频通话和大屏浏览。",
     category: "tablet",
     query: "tablet for casual reading, family video calls, and light browsing",
     tone: "amber",
   },
   {
     id: "travel-earbuds",
-    title: "Travel earbuds with ANC",
-    subtitle: "Noise cancellation and long battery for flights.",
+    title: "带降噪的旅行耳机",
+    subtitle: "适合飞行场景的降噪和长续航。",
     category: "earbuds",
     maxPrice: 500,
     query: "travel earbuds with active noise cancellation and long battery life",
@@ -87,16 +87,16 @@ export const WORKBENCH_TASKS: readonly WorkbenchTaskEntry[] = [
   },
   {
     id: "designer-monitor",
-    title: "Designer's monitor",
-    subtitle: "Color-accurate panel for design and editing.",
+    title: "设计师显示器",
+    subtitle: "适合设计和剪辑的高色准面板。",
     category: "monitor",
     query: "monitor for design work with accurate color and high refresh rate",
     tone: "sky",
   },
   {
     id: "compare-phones",
-    title: "Compare two phones",
-    subtitle: "Side-by-side trade-offs across camera, battery, and price.",
+    title: "两款手机对比",
+    subtitle: "围绕相机、续航和价格做正面对比。",
     category: "phone",
     query: "compare flagship phones across camera, battery, and price",
     tone: "violet",
@@ -146,8 +146,8 @@ export function stageForWorkbenchState(
 }
 
 export function recommendationLabelForIndex(index: number): string | null {
-  if (index === 0) return "Best fit";
-  if (index === 1) return "Performance pick";
-  if (index === 2) return "Value pick";
+  if (index === 0) return "最匹配";
+  if (index === 1) return "性能优先";
+  if (index === 2) return "性价比优先";
   return null;
 }

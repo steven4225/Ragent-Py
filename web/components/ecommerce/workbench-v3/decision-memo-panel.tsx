@@ -8,46 +8,49 @@ export function DecisionMemoPanel({
   memo,
 }: DecisionMemoPanelProps) {
   return (
-    <aside className="border border-slate-200 bg-[#fcfaf4]">
-      <div className="border-b border-slate-200 px-4 py-4">
+    <aside className="border border-slate-900 bg-[#fffdf8]">
+      <div className="border-b border-slate-200 bg-[#efe7d8] px-4 py-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          Decision memo
+          购买意见
         </p>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          A defended recommendation in plain buying language.
+          把推荐结论压缩成一份简短、克制、可执行的意见书。
         </p>
+      </div>
+
+      <div className="px-4 py-4">
+        <div className="border border-slate-900 bg-white px-4 py-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+            摘要
+          </p>
+          <p className="mt-3 text-[0.98rem] leading-8 text-slate-900">{memo.recommendation}</p>
+        </div>
       </div>
 
       <div className="divide-y divide-slate-200">
         <section className="px-4 py-4">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Recommendation
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+            适合买它
           </p>
-          <p className="mt-2 text-sm leading-7 text-slate-900">{memo.recommendation}</p>
+          <p className="mt-3 text-sm leading-7 text-slate-900">{memo.buyIf}</p>
         </section>
         <section className="px-4 py-4">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Buy this if
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+            不适合买它
           </p>
-          <p className="mt-2 text-sm leading-7 text-slate-900">{memo.buyIf}</p>
+          <p className="mt-3 text-sm leading-7 text-slate-900">{memo.avoidIf}</p>
         </section>
         <section className="px-4 py-4">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Avoid this if
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+            主要代价
           </p>
-          <p className="mt-2 text-sm leading-7 text-slate-900">{memo.avoidIf}</p>
+          <p className="mt-3 text-sm leading-7 text-slate-900">{memo.tradeOff}</p>
         </section>
         <section className="px-4 py-4">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Main trade-off
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+            如果优先级变化
           </p>
-          <p className="mt-2 text-sm leading-7 text-slate-900">{memo.tradeOff}</p>
-        </section>
-        <section className="px-4 py-4">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            If priorities change
-          </p>
-          <p className="mt-2 text-sm leading-7 text-slate-900">{memo.revisitWhen}</p>
+          <p className="mt-3 text-sm leading-7 text-slate-900">{memo.revisitWhen}</p>
         </section>
       </div>
     </aside>

@@ -476,7 +476,7 @@ export default function ShopperWorkbenchV3Page() {
   }, []);
 
   const dataModeLabel =
-    dataMode === "backend" ? "Backend catalog" : "Local fallback catalog";
+    dataMode === "backend" ? "后端商品源" : "本地回退商品源";
 
   const referenceBriefs = useMemo(
     () =>
@@ -489,82 +489,103 @@ export default function ShopperWorkbenchV3Page() {
   );
 
   return (
-    <main className="min-h-screen bg-[#f1eee6] text-slate-950">
-      <div className="mx-auto flex w-full max-w-[1380px] flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-[#ece8de] text-slate-950">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
         {searchError ? (
           <div className="border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {searchError}
           </div>
         ) : null}
 
-        <AdvisorBriefBar
-          brief={draftBrief}
-          budgetLabel={parsedBrief.budgetLabel}
-          useCase={parsedBrief.useCase}
-          mustHaves={parsedBrief.mustHaves}
-          niceToHaves={parsedBrief.niceToHaves}
-          warnings={parsedBrief.warnings}
-          disabled={isSearching}
-          dataModeLabel={dataModeLabel}
-          referenceBriefs={referenceBriefs}
-          activeReferenceId={activeTaskId}
-          onBriefChange={setDraftBrief}
-          onSubmit={onSubmitBrief}
-          onPickReference={onPickReference}
+        <section className="border border-slate-900 bg-[#fcfaf4]">
+          <div className="flex flex-col gap-2 border-b border-slate-300 px-4 py-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-slate-500">
+                Ragent 导购台
+              </p>
+              <h1 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-slate-950 sm:text-2xl">
+                高可信度的 3C 选购建议
+              </h1>
+            </div>
+            <p className="max-w-xl text-sm leading-6 text-slate-600">
+              先给出一个清晰推荐，再补上足以支撑这个推荐的证据。
+            </p>
+          </div>
+
+          <AdvisorBriefBar
+            brief={draftBrief}
+            budgetLabel={parsedBrief.budgetLabel}
+            useCase={parsedBrief.useCase}
+            mustHaves={parsedBrief.mustHaves}
+            niceToHaves={parsedBrief.niceToHaves}
+            warnings={parsedBrief.warnings}
+            disabled={isSearching}
+            dataModeLabel={dataModeLabel}
+            referenceBriefs={referenceBriefs}
+            activeReferenceId={activeTaskId}
+            onBriefChange={setDraftBrief}
+            onSubmit={onSubmitBrief}
+            onPickReference={onPickReference}
+          />
+
+          <IntentInterpretationStrip {...intent} />
+        </section>
+
+        <PrimaryVerdictPanel
+          verdict={verdict}
+          onInspectCompare={() => void runCompare(lanes[0]?.block ?? null)}
+          onInspectAlternatives={() => setCatalogOpen(true)}
         />
 
-        <IntentInterpretationStrip {...intent} />
-
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_360px]">
-          <PrimaryVerdictPanel
-            verdict={verdict}
-            onInspectCompare={() => void runCompare(lanes[0]?.block ?? null)}
-            onInspectAlternatives={() => setCatalogOpen(true)}
-          />
+        <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
           <DecisionMemoPanel memo={memo} />
-        </div>
-
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <AlternativeLanes
             lanes={lanes}
             onChooseLane={(lane) => void runCompare(lane.block)}
           />
-          <TradeoffCompareBoard
-            highlights={compareHighlights}
-            compareBlock={compareBlock}
-          />
         </div>
+
+        <TradeoffCompareBoard
+          highlights={compareHighlights}
+          compareBlock={compareBlock}
+        />
 
         <CatalogDrawer
           open={catalogOpen}
           onToggle={() => setCatalogOpen((current) => !current)}
-          summary="Use the wider field to challenge the current recommendation, not to restart from zero."
+          summary="展开更宽的商品池，是为了挑战当前主推荐，不是为了把决策重新打回起点。"
         >
           <div className="border-b border-slate-200 pb-3">
             <div className="grid gap-3 md:grid-cols-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                  Candidate pool
+                  候选池
                 </p>
                 <p className="mt-2 text-sm text-slate-950">
-                  {isSearching ? "Refreshing the shortlist..." : `${blocks.length} shown / ${totalCount} matched`}
+                  {isSearching ? "正在刷新候选列表..." : `已展示 ${blocks.length} 个 / 共匹配 ${totalCount} 个`}
                 </p>
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                  Compare state
+                  对比状态
                 </p>
                 <p className="mt-2 text-sm text-slate-950">
                   {selectedBlocks.length >= 2
                     ? `${selectedBlocks[0].name} vs ${selectedBlocks[1].name}`
-                    : "No active trade-off selected yet"}
+                    : "当前还没有激活中的取舍对比"}
                 </p>
               </div>
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                  Flow stage
+                  当前阶段
                 </p>
-                <p className="mt-2 text-sm text-slate-950">{currentStage}</p>
+                <p className="mt-2 text-sm text-slate-950">
+                  {currentStage === "explore"
+                    ? "收敛需求"
+                    : currentStage === "compare"
+                      ? "解决取舍"
+                      : "形成结论"}
+                </p>
               </div>
             </div>
           </div>
@@ -611,7 +632,7 @@ export default function ShopperWorkbenchV3Page() {
                       disabled={isWinner || isComparing}
                       className="border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:border-slate-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
                     >
-                      {isWinner ? "Current winner" : "Compare with winner"}
+                      {isWinner ? "当前主推荐" : "与主推荐对比"}
                     </button>
                   </div>
                 </article>

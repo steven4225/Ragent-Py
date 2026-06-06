@@ -7,29 +7,29 @@ export function IntentInterpretationStrip({
   riskNote,
 }: IntentInterpretation) {
   return (
-    <section className="border border-slate-200 bg-[#f7f3ea]">
+    <section className="bg-[#f4efe3]">
       <div className="grid gap-0 lg:grid-cols-4">
         <div className="border-b border-slate-200 px-4 py-3 lg:border-b-0 lg:border-r">
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Buying task
+            购买任务
           </p>
           <p className="mt-1 text-sm leading-6 text-slate-950">{buyingTask}</p>
         </div>
         <div className="border-b border-slate-200 px-4 py-3 lg:border-b-0 lg:border-r">
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Priority
+            优先级
           </p>
           <p className="mt-1 text-sm leading-6 text-slate-950">{priorityLine}</p>
         </div>
         <div className="border-b border-slate-200 px-4 py-3 lg:border-b-0 lg:border-r">
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Advisor path
+            顾问路径
           </p>
           <p className="mt-1 text-sm leading-6 text-slate-950">{advisorPath}</p>
         </div>
         <div className="px-4 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Risk note
+            风险提示
           </p>
           <p className="mt-1 text-sm leading-6 text-slate-950">{riskNote}</p>
         </div>

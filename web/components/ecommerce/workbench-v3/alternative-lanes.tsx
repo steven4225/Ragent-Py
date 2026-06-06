@@ -10,47 +10,51 @@ export function AlternativeLanes({
   onChooseLane,
 }: AlternativeLanesProps) {
   return (
-    <section className="border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-4 py-4">
+    <section className="border border-slate-900 bg-white">
+      <div className="border-b border-slate-200 bg-[#f4efe3] px-4 py-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          Alternative lanes
+          替代路线
         </p>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-          Two deliberate ways to challenge the current recommendation without reopening the whole
-          catalog from zero.
+          两条有意识地挑战主推荐的路线，但不重新把整次搜索推倒重来。
         </p>
       </div>
 
-      <div className="divide-y divide-slate-200">
-        {lanes.map((lane) => (
+      <div className="grid gap-0 xl:grid-cols-2">
+        {lanes.map((lane, index) => (
           <article
             key={lane.lane}
-            className="grid gap-4 px-4 py-4 lg:grid-cols-[150px_minmax(0,1fr)_auto] lg:items-center"
+            className={[
+              "grid gap-4 px-4 py-5 xl:px-5",
+              index === 0 ? "border-b border-slate-200 xl:border-b-0 xl:border-r" : "",
+            ].join(" ")}
           >
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                {lane.lane}
-              </p>
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-base font-semibold tracking-tight text-slate-950 sm:text-lg">
-                {lane.block?.name ?? "Alternative pending"}
-              </h3>
-              <p className="mt-1 text-sm text-slate-600">
-                {lane.block
-                  ? `${lane.block.brand} / ${lane.block.category} / $${lane.block.price_usd.toLocaleString("en-US")}`
-                  : "No alternative is available until the shortlist fills in."}
-              </p>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">{lane.why}</p>
-            </div>
-            <div>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                  路线 {index + 1}
+                </p>
+                <p className="mt-2 text-sm font-medium text-slate-500">{lane.lane}</p>
+              </div>
               <button
                 type="button"
                 onClick={() => onChooseLane?.(lane)}
-                className="border border-slate-300 bg-[#fbf9f3] px-3 py-2 text-sm font-semibold text-slate-700 transition-colors duration-150 hover:border-slate-500"
+                className="border border-slate-900 bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition-colors duration-150 hover:bg-slate-800"
               >
-                Compare
+                加入对比
               </button>
+            </div>
+
+            <div className="min-w-0">
+              <h3 className="text-2xl font-semibold tracking-[-0.03em] text-slate-950">
+                {lane.block?.name ?? "替代项待定"}
+              </h3>
+              <p className="mt-2 text-sm text-slate-600">
+                {lane.block
+                  ? `${lane.block.brand} / ${lane.block.category} / $${lane.block.price_usd.toLocaleString("en-US")}`
+                  : "在候选列表成型之前，这里还不会出现可信替代项。"}
+              </p>
+              <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-700">{lane.why}</p>
             </div>
           </article>
         ))}

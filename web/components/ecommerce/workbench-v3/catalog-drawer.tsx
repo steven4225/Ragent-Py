@@ -10,7 +10,7 @@ type CatalogDrawerProps = {
 export function CatalogDrawer({
   open,
   onToggle,
-  summary = "Open the deeper catalog only after the recommendation and compare layers are clear.",
+  summary = "只有在主推荐和关键对比都清楚之后，才展开更深的商品池。",
   children,
 }: CatalogDrawerProps) {
   return (
@@ -23,12 +23,12 @@ export function CatalogDrawer({
       >
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Catalog layer
+            商品池展开层
           </p>
           <p className="mt-2 text-sm leading-6 text-slate-600">{summary}</p>
         </div>
         <span className="border border-slate-300 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-          {open ? "Collapse" : "Expand"}
+          {open ? "收起" : "展开"}
         </span>
       </button>
 
@@ -42,7 +42,7 @@ export function CatalogDrawer({
           <div className="border-t border-slate-200 px-4 py-4">
             {children ?? (
               <p className="text-sm leading-6 text-slate-600">
-                The broader product pool, richer filters, and fuller spec views plug in here.
+                更宽的商品池、更细的筛选条件和更完整的规格视图会放在这里。
               </p>
             )}
           </div>

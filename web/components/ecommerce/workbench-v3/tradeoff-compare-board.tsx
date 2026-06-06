@@ -15,17 +15,16 @@ export function TradeoffCompareBoard({
   const hasSpecTable = Boolean(compareBlock?.columns.length);
 
   return (
-    <section className="border border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-4 py-4">
+    <section className="border border-slate-900 bg-white">
+      <div className="border-b border-slate-200 bg-[#fcfaf4] px-4 py-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-          Trade-off compare
+          取舍对比
         </p>
-        <h3 className="mt-2 text-xl font-semibold tracking-tight text-slate-950">
-          Explain why one option should win.
+        <h3 className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-slate-950">
+          解释为什么它应该赢。
         </h3>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-          This section exists to defend the recommendation, not to overwhelm the user with every
-          possible parameter at once.
+          这一区域的任务是为推荐结论提供证据，不是一次性把所有参数都砸给你。
         </p>
       </div>
 
@@ -35,16 +34,16 @@ export function TradeoffCompareBoard({
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
                 <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                  Dimension
+                  维度
                 </th>
                 <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                  Primary
+                  主推荐
                 </th>
                 <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                  Alternative
+                  替代项
                 </th>
                 <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                  Advisor read
+                  顾问判断
                 </th>
               </tr>
             </thead>
@@ -62,7 +61,7 @@ export function TradeoffCompareBoard({
         </div>
       ) : (
         <div className="border-b border-slate-200 px-4 py-5 text-sm leading-6 text-slate-600">
-          Compare the recommendation against one challenger to surface the real trade-off.
+          先让主推荐和一个挑战者正面对比，真正的取舍才会浮出来。
         </div>
       )}
 
@@ -71,8 +70,7 @@ export function TradeoffCompareBoard({
           <SpecCompareTable block={compareBlock} />
         ) : (
           <p className="text-sm leading-6 text-slate-600">
-            The deeper spec table stays below the decision summary and only appears after products
-            are actively compared.
+            更完整的规格表会留在下面，只有当商品进入主动对比时才会出现。
           </p>
         )}
       </div>

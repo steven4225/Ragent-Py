@@ -27,8 +27,8 @@ function renderList(values: string[] | undefined, fallback: string): string {
 
 export function AdvisorBriefBar({
   brief,
-  budgetLabel = "Flexible",
-  useCase = "General purchase decision",
+  budgetLabel = "弹性预算",
+  useCase = "一般购买决策",
   mustHaves,
   niceToHaves,
   warnings,
@@ -41,53 +41,52 @@ export function AdvisorBriefBar({
   onPickReference,
 }: AdvisorBriefBarProps) {
   return (
-    <section className="border border-slate-300 bg-[#fbf8f1]">
-      <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+    <section className="bg-[#fcfaf4]">
+      <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
-            Shopping brief
+            购买需求
           </p>
           <p className="mt-1 text-sm leading-6 text-slate-700">
-            State the need once. The page should narrow the field and name one credible pick before
-            it asks you to compare.
+            只要把需求说明白一次，这个页面就该先给出一个可信的一号推荐，而不是先让你做更多操作。
           </p>
         </div>
         {dataModeLabel ? (
-          <div className="inline-flex items-center border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
+          <div className="inline-flex items-center border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
             {dataModeLabel}
           </div>
         ) : null}
       </div>
 
       <form
-        className="px-4 py-3"
+        className="border-b border-slate-200 px-4 py-3"
         onSubmit={(event) => {
           event.preventDefault();
           onSubmit?.();
         }}
       >
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-          <div className="min-w-0 flex-1 border border-slate-300 bg-white">
+        <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+          <div className="min-w-0 flex-1 border border-slate-900 bg-white">
             <input
               value={brief}
               onChange={(event) => onBriefChange?.(event.target.value)}
-              placeholder="Laptop under $1500 for coding, calls, and light gaming"
-              className="min-h-12 w-full bg-transparent px-3 text-sm text-slate-950 placeholder:text-slate-400 focus:outline-none"
+              placeholder="例如：1500 美元以内，适合写代码、开会和轻度游戏的笔记本"
+              className="min-h-12 w-full bg-transparent px-4 text-sm text-slate-950 placeholder:text-slate-400 focus:outline-none"
             />
           </div>
           <button
             type="submit"
             disabled={disabled}
-            className="min-h-12 border border-slate-950 bg-slate-950 px-4 text-sm font-semibold text-white transition-colors duration-150 hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500"
+            className="min-h-12 border border-slate-950 bg-slate-950 px-5 text-sm font-semibold text-white transition-colors duration-150 hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-200 disabled:text-slate-500"
           >
-            Build recommendation
+            生成建议
           </button>
         </div>
 
         {referenceBriefs.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="self-center text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-              Reference briefs
+              参考任务
             </span>
             {referenceBriefs.map((reference) => {
               const isActive = reference.id === activeReferenceId;
@@ -97,21 +96,13 @@ export function AdvisorBriefBar({
                   type="button"
                   onClick={() => onPickReference?.(reference.id)}
                   className={[
-                    "border px-3 py-1.5 text-left transition-colors duration-150",
+                    "border px-3 py-1.5 text-left text-xs font-semibold transition-colors duration-150",
                     isActive
                       ? "border-slate-950 bg-slate-950 text-white"
                       : "border-slate-200 bg-white text-slate-700 hover:border-slate-400",
                   ].join(" ")}
                 >
-                  <span className="block text-xs font-semibold">{reference.title}</span>
-                  <span
-                    className={[
-                      "mt-1 block text-[10px]",
-                      isActive ? "text-slate-200" : "text-slate-500",
-                    ].join(" ")}
-                  >
-                    {reference.subtitle}
-                  </span>
+                  <span className="block">{reference.title}</span>
                 </button>
               );
             })}
@@ -119,42 +110,42 @@ export function AdvisorBriefBar({
         ) : null}
       </form>
 
-      <div className="grid gap-0 border-t border-slate-200 lg:grid-cols-[170px_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="grid gap-0 lg:grid-cols-[170px_minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1fr)]">
         <section className="border-b border-slate-200 px-4 py-3 lg:border-b-0 lg:border-r">
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Budget
+            预算
           </p>
           <p className="mt-1 text-sm text-slate-950">{budgetLabel}</p>
           <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Use case
+            使用场景
           </p>
           <p className="mt-1 text-sm text-slate-950">{useCase}</p>
         </section>
 
         <section className="border-b border-slate-200 px-4 py-3 lg:border-b-0 lg:border-r">
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Must-have
+            必要条件
           </p>
           <p className="mt-1 text-sm leading-6 text-slate-950">
-            {renderList(mustHaves, "No hard constraints extracted yet.")}
+            {renderList(mustHaves, "还没有提取出明确的硬约束。")}
           </p>
         </section>
 
         <section className="border-b border-slate-200 px-4 py-3 lg:border-b-0 lg:border-r">
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Nice-to-have
+            加分项
           </p>
           <p className="mt-1 text-sm leading-6 text-slate-950">
-            {renderList(niceToHaves, "No secondary preferences extracted yet.")}
+            {renderList(niceToHaves, "还没有提取出明确的次级偏好。")}
           </p>
         </section>
 
         <section className="px-4 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-            Constraint tension
+            约束冲突
           </p>
           <p className="mt-1 text-sm leading-6 text-slate-950">
-            {renderList(warnings, "No obvious tension detected in the current brief.")}
+            {renderList(warnings, "当前需求里没有明显的约束冲突。")}
           </p>
         </section>
       </div>
