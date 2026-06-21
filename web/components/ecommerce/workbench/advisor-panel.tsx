@@ -7,19 +7,27 @@ import type { ProductCardBlock } from "@/lib/contracts/ecommerce-blocks";
 import type { AdvisorState } from "./types";
 
 /**
- * Right-rail AI advisor panel.
+ * Right-rail decision assistant.
  *
- * Deliberately NOT a chat box — it's a "Why?" / "Compare these" /
- * "Which one for me?" guidance surface. The big input is replaced by
- * structured prompts that hand the advisor enough context (selected
- * product ids, current task seed) to answer in one shot.
+ * Deliberately NOT a chat box and NOT the page's protagonist — it explains
+ * the picks the shopper has already made. The structured questions are
+ * intentionally narrow:
+ *
+ *   - "Why is this the best fit?"
+ *   - "Explain the trade-offs"
+ *   - "What do I lose if I save money?"
+ *   - "What's the next best alternative?"
+ *
+ * Each question is pre-loaded with the current task and the current
+ * shortlist, so a single click yields a useful answer instead of a
+ * cold-start chat.
  */
 
 function AdvisorIcon({ status }: { status: AdvisorState["status"] }) {
   if (status === "streaming") {
     return (
-      <span className="relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white">
-        <span className="absolute inset-0 animate-ping rounded-full bg-slate-900/40" />
+      <span className="relative inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-950 text-cyan-300">
+        <span className="absolute inset-0 animate-ping rounded-full bg-cyan-400/30" />
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="relative h-4 w-4">
           <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
         </svg>
@@ -27,9 +35,9 @@ function AdvisorIcon({ status }: { status: AdvisorState["status"] }) {
     );
   }
   return (
-    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white">
+    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-950 text-cyan-300">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-        <path d="M12 2 14.39 7.42 20 8.27l-4 3.9.95 5.53L12 15.1 7.05 17.7 8 12.17l-4-3.9 5.61-.85L12 2z" />
+        <path d="M12 3v4M12 17v4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M3 12h4M17 12h4M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8" />
       </svg>
     </span>
   );
@@ -54,76 +62,103 @@ export function AdvisorPanel({
   const selectedCount = selectedBlocks.length;
   const hasSelection = selectedCount >= 1;
   const hasPair = selectedCount >= 2;
+  const task = taskSeedQuery.trim() || "the current shopping decision";
+  const topPick = selectedBlocks[0];
+  const names = selectedBlocks.map((b) => b.name).join(" vs ");
 
-  const quickPrompts: { id: string; label: string; question: string; enabled: boolean }[] = [
+  const quickPrompts: { id: string; label: string; question: string; enabled: boolean; tone: "primary" | "secondary" }[] = [
     {
       id: "fit",
-      label: hasSelection
-        ? `Why does "${selectedBlocks[0]?.name}" fit my task?`
-        : "Why does my top pick fit?",
-      question: hasSelection
-        ? `Given the task "${taskSeedQuery || "shopping for a 3C product"}", explain why ${selectedBlocks
-            .map((block) => block.name)
-            .join(" and ")} is a strong fit. Be concrete about specs that matter.`
+      label: topPick
+        ? `Why is "${topPick.name}" the best fit?`
+        : "Why is the top pick the best fit?",
+      question: topPick
+        ? `Given the task "${task}", explain why ${topPick.name} (${topPick.brand}, ${topPick.category}) is the best fit. Be concrete about the specs that matter for this task and reference the price ($${Math.round(topPick.price_usd)}).`
         : "",
       enabled: hasSelection,
+      tone: "primary",
     },
     {
       id: "compare",
       label: hasPair
-        ? `Trade-offs between ${selectedBlocks.length} picks`
-        : "Trade-offs between picks",
+        ? `Explain trade-offs across ${selectedCount} picks`
+        : "Explain the trade-offs",
       question: hasPair
-        ? `Compare ${selectedBlocks
-            .map((block) => block.name)
-            .join(" vs ")} for the task "${taskSeedQuery || "general shopping"}". Highlight key trade-offs and a recommended winner.`
+        ? `For the task "${task}", compare ${names}. Walk through the key trade-offs and recommend one with a one-line reason.`
         : "",
       enabled: hasPair,
+      tone: "secondary",
     },
     {
-      id: "decide",
-      label: "Help me decide",
-      question:
-        selectedCount > 0
-          ? `I'm choosing between ${selectedBlocks
-              .map((block) => block.name)
-              .join(", ")}. My task is "${taskSeedQuery || "shopping for a 3C product"}". Walk me through the decision and recommend one.`
-          : `Recommend the best product for "${taskSeedQuery || "shopping for a 3C product"}" and explain why.`,
+      id: "save",
+      label: "What do I lose if I save money?",
+      question: hasSelection
+        ? `If I switch from my current shortlist (${names || topPick?.name}) to the cheapest acceptable option for "${task}", what do I give up in real terms? Be concrete (e.g. battery hours, RAM, camera quality).`
+        : `For "${task}", what does a shopper give up by picking the cheapest option instead of the best fit? Be concrete.`,
       enabled: true,
+      tone: "secondary",
+    },
+    {
+      id: "alt",
+      label: "What's the next best alternative?",
+      question: hasSelection
+        ? `Beyond ${names || topPick?.name}, what's the next best alternative for "${task}"? Suggest one and explain in 2-3 sentences when a shopper would prefer it.`
+        : `For "${task}", suggest a strong next-best alternative beyond the obvious top picks and explain when a shopper would prefer it.`,
+      enabled: true,
+      tone: "secondary",
     },
   ];
 
   return (
     <section
-      aria-label="AI shopping advisor"
+      aria-label="Decision assistant"
       className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
     >
-      <header className="flex items-center gap-3">
+      <header className="flex items-start gap-3">
         <AdvisorIcon status={state.status} />
         <div className="flex-1">
-          <h2 className="text-sm font-semibold text-slate-950">Shopping advisor</h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Explains the picks. Doesn&apos;t shop for you.
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-700">
+            Decision assistant
+          </p>
+          <h2 className="text-sm font-semibold text-slate-950">
+            Explains the picks. Doesn&apos;t replace your shortlist.
+          </h2>
+          <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+            Anchored to your active task and your shortlist — answers are one-shot, not a chat thread.
           </p>
         </div>
       </header>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="grid gap-2 sm:grid-cols-2">
         {quickPrompts.map((prompt) => (
           <button
             key={prompt.id}
             type="button"
             onClick={() => onAsk(prompt.question)}
             disabled={!prompt.enabled || state.status === "streaming"}
+            title={prompt.enabled ? prompt.question : "Add at least one pick to enable this."}
             className={[
-              "inline-flex max-w-full items-center rounded-full border px-3 py-1.5 text-xs font-medium transition",
+              "group inline-flex w-full flex-col items-start gap-1 rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition",
               prompt.enabled
-                ? "border-slate-200 bg-white text-slate-700 hover:border-slate-900 hover:bg-slate-900 hover:text-white"
+                ? prompt.tone === "primary"
+                  ? "border-slate-950 bg-slate-950 text-white hover:bg-slate-900"
+                  : "border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50"
                 : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300",
             ].join(" ")}
-            title={prompt.enabled ? prompt.question : "Pick a product first."}
           >
-            <span className="max-w-[220px] truncate">{prompt.label}</span>
+            <span
+              className={[
+                "font-mono text-[9px] font-semibold uppercase tracking-[0.18em]",
+                prompt.enabled
+                  ? prompt.tone === "primary"
+                    ? "text-cyan-300"
+                    : "text-slate-400"
+                  : "text-slate-300",
+              ].join(" ")}
+            >
+              Quick question
+            </span>
+            <span className="line-clamp-2 leading-snug">{prompt.label}</span>
           </button>
         ))}
       </div>
@@ -141,16 +176,16 @@ export function AdvisorPanel({
         }}
       >
         <label htmlFor={inputId} className="sr-only">
-          Ask the advisor a custom question
+          Ask the decision assistant a follow-up
         </label>
         <input
           id={inputId}
           name="q"
           type="text"
           autoComplete="off"
-          placeholder="Or ask: which one for long flights?"
+          placeholder="Follow up: which one for long flights?"
           disabled={state.status === "streaming"}
-          className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/20 disabled:cursor-not-allowed disabled:bg-slate-50"
+          className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-950 focus:outline-none focus:ring-2 focus:ring-cyan-300/60 disabled:cursor-not-allowed disabled:bg-slate-50"
         />
         {state.status === "streaming" ? (
           <button
@@ -163,7 +198,7 @@ export function AdvisorPanel({
         ) : (
           <button
             type="submit"
-            className="inline-flex items-center rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+            className="inline-flex items-center rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-900"
           >
             Ask
           </button>
@@ -177,22 +212,22 @@ export function AdvisorPanel({
       )}
 
       {(state.status !== "idle" || state.text.length > 0) && (
-        <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
           {state.question && (
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <p className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-700">
               {state.question.length > 110
                 ? `${state.question.slice(0, 110)}…`
                 : state.question}
             </p>
           )}
           <p className="whitespace-pre-wrap text-sm leading-7 text-slate-800">
-            {state.text || (state.status === "streaming" ? "Thinking…" : "")}
+            {state.text || (state.status === "streaming" ? "Reading the shortlist…" : "")}
             {state.status === "streaming" && (
-              <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-slate-400 align-middle" />
+              <span className="ml-1 inline-block h-3 w-1 animate-pulse bg-cyan-500 align-middle" />
             )}
           </p>
           {state.status === "done" && (state.provider || state.model) && (
-            <p className="mt-3 text-[10px] uppercase tracking-wider text-slate-400">
+            <p className="mt-3 font-mono text-[10px] uppercase tracking-wider text-slate-400">
               {state.provider}
               {state.model ? ` · ${state.model}` : ""}
             </p>
